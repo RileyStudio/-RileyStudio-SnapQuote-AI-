@@ -1,0 +1,114 @@
+import Link from 'next/link';
+import Logo from '@/components/Logo';
+import BigButton from '@/components/BigButton';
+
+export default function LandingPage() {
+  return (
+    <main>
+      <header className="flex items-center justify-between px-5 py-4 max-w-5xl mx-auto">
+        <Logo />
+        <Link href="/login" className="font-display font-semibold text-ink">
+          Log in
+        </Link>
+      </header>
+
+      {/* Hero — the literal transformation is the thesis, not a generic gradient */}
+      <section className="px-5 pt-8 pb-12 max-w-5xl mx-auto">
+        <h1 className="font-display font-extrabold text-4xl sm:text-5xl leading-[1.05] max-w-xl">
+          Quote the job before you leave the driveway.
+        </h1>
+        <p className="mt-4 text-lg text-ink/80 max-w-md">
+          Snap a few photos, record a voice note, and SnapQuote AI drafts a
+          professional estimate — done before you&apos;re back at the shop.
+        </p>
+        <div className="mt-6 flex flex-col sm:flex-row gap-3 max-w-sm">
+          <BigButton variant="primary" fullWidth={false} className="px-8">
+            Try the Demo
+          </BigButton>
+          <Link href="/quote/demo-quote-001" className="contents">
+            <BigButton variant="ghost" fullWidth={false} className="px-8">
+              See a Sample Quote
+            </BigButton>
+          </Link>
+        </div>
+
+        {/* Transformation visual: phone-in-truck → branded quote */}
+        <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+          <PhoneMock label="Photos + voice note" tone="raw" />
+          <ArrowDivider />
+          <PhoneMock label="Branded PDF quote" tone="polished" />
+        </div>
+      </section>
+
+      {/* How it works — a real 3-step sequence, so numbering earns its keep */}
+      <section className="bg-surface text-paper px-5 py-12">
+        <div className="max-w-5xl mx-auto grid sm:grid-cols-3 gap-8">
+          <Step n="1" title="Photos" body="Snap the job site, right from your phone." />
+          <Step n="2" title="Voice note" body="Talk through the scope like you would to a foreman." />
+          <Step n="3" title="Branded quote" body="AI drafts it, you review it, the customer approves it with one tap." />
+        </div>
+      </section>
+
+      {/* Why contractors use it */}
+      <section className="px-5 py-12 max-w-3xl mx-auto">
+        <h2 className="font-display font-bold text-2xl mb-6">Why contractors use it</h2>
+        <ul className="space-y-4 text-ink/85">
+          <li className="flex gap-3"><span className="text-orange font-bold">—</span> First quote in wins more jobs than the best quote eventually.</li>
+          <li className="flex gap-3"><span className="text-orange font-bold">—</span> No more typing line items at 9pm.</li>
+          <li className="flex gap-3"><span className="text-orange font-bold">—</span> Looks like it came from an office, even when it came from a truck.</li>
+        </ul>
+      </section>
+
+      <footer className="px-5 py-8 text-center text-sm text-ink/60 border-t border-line">
+        No subscriptions. No setup calls. Just quotes that go out faster.
+      </footer>
+    </main>
+  );
+}
+
+function Step({ n, title, body }) {
+  return (
+    <div>
+      <div className="font-display font-extrabold text-orange text-3xl mb-1">{n}</div>
+      <h3 className="font-display font-semibold text-xl mb-1">{title}</h3>
+      <p className="text-paper/75 text-sm">{body}</p>
+    </div>
+  );
+}
+
+function PhoneMock({ label, tone }) {
+  const isRaw = tone === 'raw';
+  return (
+    <div className="flex flex-col items-center">
+      <div
+        className={`w-32 h-56 rounded-2xl border-2 ${
+          isRaw ? 'border-line bg-white' : 'border-ink bg-ink'
+        } shadow-card flex flex-col items-center justify-center p-3 gap-2`}
+      >
+        {isRaw ? (
+          <>
+            <div className="w-full h-14 bg-line rounded" />
+            <div className="w-full h-3 bg-line/70 rounded" />
+            <div className="w-10 h-10 rounded-full bg-orange/70" />
+          </>
+        ) : (
+          <>
+            <div className="w-full h-3 bg-orange rounded" />
+            <div className="w-full h-3 bg-paper/80 rounded" />
+            <div className="w-full h-3 bg-paper/80 rounded" />
+            <div className="w-full h-8 bg-paper/30 rounded mt-2" />
+          </>
+        )}
+      </div>
+      <span className="mt-2 text-sm font-display font-semibold text-ink/70">{label}</span>
+    </div>
+  );
+}
+
+function ArrowDivider() {
+  return (
+    <div className="flex sm:flex-col items-center justify-center text-orange text-3xl font-display">
+      →
+    </div>
+  );
+}
