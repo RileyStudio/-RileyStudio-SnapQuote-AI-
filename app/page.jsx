@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import Logo from '@/components/Logo';
-import BigButton from '@/components/BigButton';
 
 export default function LandingPage() {
   return (
@@ -22,13 +21,17 @@ export default function LandingPage() {
           professional estimate — done before you&apos;re back at the shop.
         </p>
         <div className="mt-6 flex flex-col sm:flex-row gap-3 max-w-sm">
-          <BigButton variant="primary" fullWidth={false} className="px-8">
+          <Link
+            href="/demo"
+            className="tap-target inline-flex items-center justify-center rounded-card bg-site px-8 py-3 font-display font-bold text-paper shadow-soft"
+          >
             Try the Demo
-          </BigButton>
-          <Link href="/quote/demo-quote-001" className="contents">
-            <BigButton variant="ghost" fullWidth={false} className="px-8">
-              See a Sample Quote
-            </BigButton>
+          </Link>
+          <Link
+            href="/quote/demo-quote-001"
+            className="tap-target inline-flex items-center justify-center rounded-card border border-line bg-transparent px-8 py-3 font-display font-bold text-ink"
+          >
+            See a Sample Quote
           </Link>
         </div>
 

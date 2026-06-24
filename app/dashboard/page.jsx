@@ -28,8 +28,23 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [confirmingDeleteId, setConfirmingDeleteId] = useState(null);
   const [actionMessage, setActionMessage] = useState('');
+  const [isDemoSession, setIsDemoSession] = useState(false);
 
   useEffect(() => {
+    // Dashboard has no auth/session check that blocks access at all — it
+    // already falls through to local/demo data whenever there's no real
+    // Supabase session, regardless of this flag. This read exists so that
+    // relationship is explicit and visible in the code (and so a future
+    // gate, if one is ever added, has an obvious existing flag to consult)
+    // rather than just asserted in a comment with nothing to point to.
+    try {
+      if (typeof window !== 'undefined') {
+        setIsDemoSession(window.localStorage.getItem('snapquote.demoSession') === 'true');
+      }
+    } catch (e) {
+      // Ignore — absence of this flag never blocks anything below.
+    }
+
     async function load() {
       if (supabase) {
         const { data: sessionData } = await supabase.auth.getSession();
@@ -167,7 +182,15 @@ export default function DashboardPage() {
       <header className="flex items-center justify-between mb-6">
         <div>
           <Logo size="sm" />
-          <p className="text-sm text-ink/60 mt-1">{contractor.business_name}</p>
+          <p className="text-sm text-ink/60 mt-1 flex items-center gap-2">
+            {contractor.business_name}
+            {isDemoSession && (
+              <span className="font-display font-semibold text-[10px] uppercase tracking-wide
+                bg-site/10 text-site rounded-full px-2 py-0.5">
+                Demo Mode
+              </span>
+            )}
+          </p>
         </div>
         <Link href="/settings" className="font-display font-semibold text-sm text-ink/70">
           Settings

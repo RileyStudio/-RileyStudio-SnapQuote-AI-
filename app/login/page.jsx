@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
 import BigButton from '@/components/BigButton';
-import { supabase, DEMO_MODE } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,10 +32,18 @@ export default function LoginPage() {
     }
   }
 
-  function continueAsDemo() {
-    // Sets a lightweight client-side flag the dashboard checks for in demo mode.
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('snapquote_demo_session', 'true');
+  function handleDemoLogin() {
+    // Demo mode must work even if Supabase is misconfigured or storage is
+    // blocked (e.g. private browsing) — the localStorage write is best-
+    // effort, but navigation to the dashboard always happens regardless.
+    // Does not call Supabase auth at all.
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('snapquote.demoSession', 'true');
+      }
+    } catch (e) {
+      // Ignore — demo mode doesn't strictly require this flag to be set;
+      // the dashboard itself never gates access on it.
     }
     router.push('/dashboard');
   }
@@ -76,16 +84,23 @@ export default function LoginPage() {
           </form>
         )}
 
-        {(DEMO_MODE || !supabase) && (
-          <div className="mt-6 pt-6 border-t border-line">
-            <BigButton variant="secondary" onClick={continueAsDemo}>
-              Continue with the demo account
-            </BigButton>
-            <p className="mt-2 text-center text-xs text-ink/50">
-              Riley Roofing Co. — sample jobs and an approved quote already loaded.
-            </p>
-          </div>
-        )}
+        {/* Always visible — a secondary demo option below the real login
+            form, not gated behind any Supabase/error state. Plain native
+            <button>, not BigButton: no component prop/event-handling
+            surface between this click and the navigation it triggers. */}
+        <div className="mt-6 pt-6 border-t border-line">
+          <button
+            type="button"
+            onClick={handleDemoLogin}
+            className="tap-target w-full rounded-card font-display font-semibold text-lg tracking-wide
+              px-6 transition-colors bg-site text-white hover:bg-site-dark active:bg-site-dark"
+          >
+            Continue with the demo account
+          </button>
+          <p className="mt-2 text-center text-xs text-ink/50">
+            Riley Roofing Co. — sample jobs and an approved quote already loaded.
+          </p>
+        </div>
       </div>
     </main>
   );
