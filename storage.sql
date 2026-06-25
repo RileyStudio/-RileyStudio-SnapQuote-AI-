@@ -71,7 +71,8 @@ update contractors set
   service_area = 'Mount Pleasant & Mount Vernon, TX',
   brand_color = '#FF5A1F',
   license_note = 'TX-RC-44821 · Licensed & Insured',
-  footer_text = 'Thank you for trusting us with your home.'
+  footer_text = 'Thank you for trusting us with your home.',
+  plan = 'founder'
 where id = '11111111-1111-1111-1111-111111111111';
 
 update contractor_settings set

@@ -17,14 +17,18 @@ export default function PhotoUploader({ photos, onPhotosChange }) {
     const files = Array.from(fileList || []).filter((f) => f.type.startsWith('image/'));
     if (files.length === 0) return;
 
-    // Local-only previews — no upload happens yet. Note: object URLs are
-    // only valid for this browser tab/session; a hard refresh will lose
-    // the preview even though the entry remains in localStorage. Swapping
-    // this for real Supabase Storage uploads is the production follow-up.
+    // Local-only previews — no upload happens here. The raw `file` is
+    // kept on the object too (not just the blob preview URL) so
+    // EstimateForm can upload it to Supabase Storage at save time when a
+    // real session exists; in demo mode it's simply dropped before
+    // persisting, exactly as before. Note: object URLs are only valid for
+    // this browser tab/session — a hard refresh loses the preview even
+    // though the entry remains in localStorage.
     const newPhotos = files.map((file) => ({
       id: newId(),
       caption: file.name,
       previewUrl: URL.createObjectURL(file),
+      file,
     }));
 
     onPhotosChange([...photos, ...newPhotos]);

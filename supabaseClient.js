@@ -1,131 +1,76 @@
-// Thin fetch wrappers around the three API routes. Each throws a helpful
-// Error (using the route's own { error } message when present) rather than
-// returning a half-parsed response, so callers can just try/catch and show
-// e.message directly in the UI.
+// Demo-mode usage limits. These exist purely to keep an unauthenticated
+// demo session from being used as a free unlimited product — every call
+// site that uses this module already checks dataSource/isDemo === local
+// first, so a real Supabase session never even reaches these functions.
+// This module itself doesn't know or care about auth state; it's just
+// localStorage counters with a max.
 
-async function parseJsonResponse(response) {
-  let data;
+const LIMITS = {
+  estimate: { key: 'snapquote.demo.estimateCount', max: 3, label: 'demo estimates' },
+  aiDraft: { key: 'snapquote.demo.aiDraftCount', max: 5, label: 'AI draft generations' },
+  pdf: { key: 'snapquote.demo.pdfCount', max: 2, label: 'PDF downloads' },
+  approval: { key: 'snapquote.demo.approvalCount', max: 3, label: 'approvals' },
+};
+
+export const DEMO_LIMITS = LIMITS;
+
+function readCount(key) {
+  if (typeof window === 'undefined') return 0;
   try {
-    data = await response.json();
+    const n = parseInt(window.localStorage.getItem(key), 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
   } catch (e) {
-    throw new Error(`Unexpected response from the server (status ${response.status}).`);
+    return 0;
+  }
+}
+
+function writeCount(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch (e) {
+    // Storage blocked (private browsing, quota) — demo limits just won't
+    // persist across reloads in that case; never throws, never blocks
+    // the action itself.
+  }
+}
+
+export function getDemoCount(type) {
+  const limit = LIMITS[type];
+  return limit ? readCount(limit.key) : 0;
+}
+
+export function getDemoMax(type) {
+  return LIMITS[type]?.max ?? Infinity;
+}
+
+export function isDemoLimitReached(type) {
+  const limit = LIMITS[type];
+  if (!limit) return false;
+  return readCount(limit.key) >= limit.max;
+}
+
+// Call this right before performing the limited action. Returns
+// { allowed, count, max, label }. When `allowed` is false, the counter is
+// NOT incremented — a blocked attempt doesn't cost anything, so the same
+// action can be retried immediately after the user upgrades.
+export function tryConsumeDemoLimit(type) {
+  const limit = LIMITS[type];
+  if (!limit) return { allowed: true, count: 0, max: Infinity, label: '' };
+
+  const current = readCount(limit.key);
+  if (current >= limit.max) {
+    return { allowed: false, count: current, max: limit.max, label: limit.label };
   }
 
-  if (!response.ok) {
-    throw new Error(data?.error || `Request failed with status ${response.status}.`);
-  }
-
-  return data;
+  const next = current + 1;
+  writeCount(limit.key, next);
+  return { allowed: true, count: next, max: limit.max, label: limit.label };
 }
 
-// → { transcript: string, demo: boolean }
-export async function transcribeAudio(file) {
-  if (!file) {
-    throw new Error('No audio file provided.');
-  }
-
-  const formData = new FormData();
-  formData.append('audio', file);
-
-  const response = await fetch('/api/transcribe', { method: 'POST', body: formData });
-  return parseJsonResponse(response);
-}
-
-// payload: { transcript?, notes?, customer?, job? }
-// → { estimate: { job_title, description, line_items, notes, terms }, demo: boolean }
-export async function draftEstimateFromNotes(payload) {
-  const response = await fetch('/api/draft-estimate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return parseJsonResponse(response);
-}
-
-// → { url: string | null, html: string, demo: boolean }
-// NOTE: /api/generate-pdf now succeeds with a real PDF binary response
-// (see generateQuotePdf below) and only returns JSON when PDF rendering
-// failed. This function still assumes an always-JSON response — calling
-// response.json() on a successful PDF response would fail to parse and
-// throw — so it's kept only for any caller that explicitly wants the old
-// always-HTML behavior. The UI's Download PDF buttons use
-// generateQuotePdf, which already handles both outcomes correctly.
-export async function generateQuoteHtml(quote) {
-  const response = await fetch('/api/generate-pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ quote }),
-  });
-  return parseJsonResponse(response);
-}
-
-// → { type: 'pdf', blob: Blob, filename: string }
-//   | { type: 'html', html: string, filename: string }
-// Branches on the response's Content-Type rather than assuming either
-// outcome, since /api/generate-pdf returns a real `application/pdf` binary
-// on success and falls back to the documented JSON shape
-// ({ html, demo, fallback, error }) only when real PDF rendering failed.
-// Throws (via parseJsonResponse) using the route's own error message for
-// any genuine request failure (missing/malformed quote).
-export async function generateQuotePdf(quote) {
-  const response = await fetch('/api/generate-pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ quote }),
-  });
-
-  if (!response.ok) {
-    return parseJsonResponse(response);
-  }
-
-  const contentType = response.headers.get('content-type') || '';
-
-  if (contentType.includes('application/pdf')) {
-    const blob = await response.blob();
-    // Trust the server's own Content-Disposition filename (it applies the
-    // same sanitization the route used) rather than reconstructing one.
-    const filename =
-      filenameFromContentDisposition(response.headers.get('content-disposition')) ||
-      `quote-${sanitizeFilenameBase(quote?.ticket_number || quote?.id)}.pdf`;
-    return { type: 'pdf', blob, filename };
-  }
-
-  // The documented fallback shape: { html, demo, fallback, error }. No
-  // Content-Disposition header here (it's a JSON response), so the
-  // filename is derived client-side using the same sanitization rule.
-  const data = await response.json();
-  const filename = `quote-${sanitizeFilenameBase(quote?.ticket_number || quote?.id)}.html`;
-  return { type: 'html', html: data.html, filename };
-}
-
-function filenameFromContentDisposition(headerValue) {
-  if (!headerValue) return null;
-  const match = headerValue.match(/filename="([^"]+)"/);
-  return match ? match[1] : null;
-}
-
-function sanitizeFilenameBase(value) {
-  return String(value || 'estimate').replace(/[^a-zA-Z0-9_-]/g, '') || 'estimate';
-}
-
-// Browser-only — the one piece of DOM-touching logic in this file, kept
-// isolated from the fetch helpers above so they stay safely callable from
-// anywhere (even, in principle, server code) without a window reference.
-export function downloadBlobFile(blob, filename) {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  URL.revokeObjectURL(url);
-}
-
-export function downloadHtmlFile(html, filename = 'quote.html') {
-  downloadBlobFile(new Blob([html], { type: 'text/html' }), filename);
+// Used by the Dashboard's "Load Demo Estimates" / Settings' "Reset Demo
+// Settings" flows if a future pass wants a full demo reset; not wired to
+// any button yet on its own.
+export function resetDemoLimits() {
+  Object.values(LIMITS).forEach((limit) => writeCount(limit.key, 0));
 }

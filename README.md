@@ -1,15 +1,20 @@
 # SnapQuote AI
 
-Contractor takes job-site photos + records a voice note → AI drafts a branded
-estimate → customer approves it from a link, no login required.
+Contractor takes job-site photos + notes → AI drafts a branded estimate →
+customer approves it from a link, no login required. Currently positioned
+around a Founding Contractor offer (first 10 contractors, $10/month
+locked for life while subscribed) rather than a generic SaaS pitch — see
+the landing page (`app/page.jsx`) and the Founder plan in `lib/plans.js`.
 
 ## Buyer Handoff Notes
 
 **Tech stack**: Next.js 14 (App Router) · React 18 · Tailwind CSS · Supabase
 (Postgres + Auth, optional) · OpenAI (Whisper transcription + Chat
 Completions, optional) · pdf-lib (PDF export, no external service). No
-payment processing, no email sending, no CRM — intentionally out of scope;
-see "Known Production Gaps" below.
+payment processing, no CRM. Sharing a quote is `mailto:`/`sms:`/clipboard
+(`components/ShareEstimateModal.jsx`) — there's a real, working email-send
+API route too (`/api/send-email`), it's just not wired into any button
+right now; see "Known Production Gaps" below.
 
 **Demo mode behavior**: with zero environment variables configured, the
 entire contractor workflow runs on browser `localStorage` — every estimate
@@ -60,16 +65,22 @@ product requires a paid API key.
 A complete click-through, in order, to see the whole product in about five
 minutes:
 
-1. **Landing page** (`/`) — read the pitch, click "Try the Demo."
-2. **Demo login** (`/login`) — tap "Continue with the demo account" (no
-   real credentials needed).
-3. **Settings branding** (`/settings`) — upload a logo, pick a brand color,
-   edit the footer text and default terms, hit Save. (Optional: tap
-   "Reset Demo Settings" to see it snap back to the built-in defaults.)
+1. **Landing page** (`/`) — read the Founding Contractor pitch and the
+   pricing comparison, click "Try Limited Demo." ("See Sample Quote" and
+   the "Showcase" placeholder section are also worth a look.)
+2. **Demo login** (`/login`) — tap "Launch limited demo" (no real
+   credentials needed).
+3. **Settings → Plan** (`/settings`) — switch to the **Founding Contractor**
+   plan and note the locked-pricing banner, then upload a logo, pick a
+   brand color, edit the footer text and default terms, hit Save.
+   (Optional: tap "Reset Demo Settings" to see it snap back to the
+   built-in defaults — this also resets the plan to Solo.)
 4. **Dashboard** (`/dashboard`) — note the metrics cards and the static
    sample rows, then tap **"Load Demo Estimates"** to seed 3 realistic
    records (one draft, one sent, one approved) instead of starting from
-   scratch.
+   scratch. (This seeding is separate from, and doesn't count against,
+   the demo estimate limit below — it's a one-time convenience and is
+   itself idempotent, not something a click-spam could abuse.)
 5. **New Estimate** (`/estimates/new`) — fill in a customer and job, or
    skip straight to step 6 first.
 6. **AI Job Notes** — type a rough note (or upload any audio file) and tap
@@ -78,51 +89,71 @@ minutes:
    needed).
 7. **Review** — tap **Review Estimate**; check the branding preview,
    totals, and notes.
-8. **Send to Customer** — tap it, then copy the generated `/quote/[id]`
-   link (or just tap "View as Customer").
-9. **Customer quote** — see the branded, work-order-styled quote exactly
-   as a real customer would.
+8. **Send to Customer** — tap it, then tap **Share Estimate** to see the
+   Email Link / Text Link / Copy Link popup (pre-filled from the
+   customer's email/phone on the estimate).
+9. **Customer quote** — tap "View as Customer" to see the branded,
+   work-order-styled quote exactly as a real customer would (note the
+   "EXAMPLE QUOTE — NOT A VALID CONTRACT" banner — only shows in
+   demo/local mode, never on a real Supabase-backed quote).
 10. **Approve quote** — tap **Approve Estimate** and watch the signature
     stamp land.
-11. **Download PDF** — tap it on either the Review page or the customer
-    quote page.
+11. **Download PDF** — tap it on the Review page (note the large
+    "EXAMPLE / VOID" watermark — demo/local only, never on a real
+    Supabase-backed estimate). Demo mode caps PDF downloads at 2 and
+    approvals at 3 — tap past either limit to see the Founder upgrade
+    notice instead of a silent failure.
 12. **Dashboard actions** — back on `/dashboard`, try **Duplicate**,
-    **Mark Approved**, the two-step **Delete**, and the search/status
-    filters on the records from steps 4–10.
+    **Mark Approved**, **Share Estimate**, the two-step **Delete**, and the
+    search/status filters on the records from steps 4–10.
 
 Every step above works with zero configuration — no Supabase project, no
-OpenAI key.
+OpenAI key. Steps 3 and 8 are gated behind the Founder/Pro/Team plans —
+switch off the Founding Contractor plan back to Solo to see the upsell
+states instead (Branding becomes a locked card; Share Estimate's button
+becomes an upsell line; Dashboard history caps at 5 most-recent estimates).
 
 ## Known Production Gaps
 
 This is a fully-clickable demo, not a production-deployed SaaS. Specifically:
 
-- **Supabase persistence is not wired end-to-end.** As of this phase, the
-  full backend foundation exists as copy/paste SQL (`supabase/schema.sql`,
-  `policies.sql`, `storage.sql`, `seed.sql` — see "Supabase Setup via SQL
-  Editor"), and the public quote page already reads from Supabase when
-  configured — but the contractor-side workflow (New Estimate, Edit,
-  Review, Dashboard) still only writes to `localStorage`, never to
-  Supabase. Wiring that up is the single biggest item before this could
-  run as a real multi-user product.
+- **Supabase persistence is now wired for estimates, settings, AND file
+  storage.** The Dashboard, New/Edit Estimate, Review, and Settings all
+  read/write real Supabase tables (`lib/supabaseEstimates.js`,
+  `lib/supabaseSettings.js`) when a real session exists — demo mode is
+  unaffected. As of this polish pass, job photos and the logo also upload
+  to the real `estimate-photos`/`logos` Storage buckets in that case
+  (`lib/supabaseStorage.js`) — local/demo mode still uses the original
+  blob-URL/base64-data-URL preview behavior unchanged, since it never has
+  a real session to upload through. `get_quote_by_token()` now joins
+  `contractor_settings` too, so the public quote page's expiration date,
+  footer text, license note, logo, and branding all reflect the real
+  contractor's settings for Supabase-backed estimates, not a hardcoded
+  14-day default.
 - **Auth gating is demo-friendly, not production-hardened.** The login
   page's "Continue with the demo account" bypass and every demo-mode page
   just render local data without checking for a real session — there's no
   middleware or layout-level route protection. Fine for a sales demo, not
-  fine for real customer data.
-- **Email sending is not implemented.** "Send to Customer" generates a
-  real, working `/quote/[id]` link, but nothing emails or texts that link
-  to the customer automatically — a contractor has to copy/send it
-  themselves today.
+  fine for real customer data. **Magic-link login now redirects through a
+  real `/auth/callback` exchange** (see below) instead of landing nowhere,
+  but the underlying gating story is unchanged.
+- **"Email sending" is no longer presented as an app feature.** The old
+  "Send Estimate Email"/"Resend Quote" buttons (which only ever sent a
+  real email if `RESEND_API_KEY` was configured, and showed a demo
+  placeholder otherwise) are gone, replaced by **Share Estimate** — a
+  popup with Email Link (`mailto:`), Text Link (`sms:`), and Copy Link.
+  None of those three claim to send anything; they hand off to the
+  contractor's own apps or the clipboard, so there's nothing to falsely
+  claim succeeded. `app/api/send-email/route.js` and
+  `sendEstimateEmail()` in `lib/apiClient.js` still exist and still work
+  if `RESEND_API_KEY` is configured, but nothing in the UI calls them
+  anymore — they're unused-but-available infrastructure now, not deleted.
 - **Payment/billing is not implemented.** No Stripe, no deposit collection,
-  no invoicing beyond the quote/estimate itself — intentionally out of
-  scope per the original product spec.
-- **Real file uploads/storage are not implemented.** Job photos use
-  `URL.createObjectURL` (gone after a hard refresh) and the business logo
-  uses a base64 data URL in `localStorage` — neither uploads anywhere yet.
-  `supabase/storage.sql` already creates the `logos` and `estimate-photos`
-  buckets with access policies ready to go; what's missing is the actual
-  upload code in `PhotoUploader.jsx`/`LogoUploader.jsx` to use them.
+  no invoicing beyond the quote/estimate itself. The Solo/Founder/Pro/Team
+  plans in Settings are feature gates only (`lib/plans.js`) — switching
+  plans is instant and free, by design; there's no checkout flow to gate
+  behind it, and the Founding Contractor offer on the landing page is
+  explicitly labeled "no payment collected yet."
 - **The PDF export path should be manually tested after `npm install`.**
   `pdf-lib` was never actually executed in the environment this was built
   in (no network access there for `npm install`) — the HTML fallback path
@@ -131,6 +162,134 @@ This is a fully-clickable demo, not a production-deployed SaaS. Specifically:
   further down for the full explanation.
 
 ## Status (this build)
+
+**Naming note**: this update was requested as "Phase 8–11," but those numbers
+were already used earlier for Real PDF Rendering, Production Readiness, and
+the Supabase SQL Setup Files. To avoid confusion, this update is referred to
+below by content (Supabase persistence, branding, email, plans) rather than
+by number.
+
+**Demo Limits + Auth Polish + Pricing Clarity (this phase)**:
+- **Fixed the magic-link login bug.** `app/auth/callback/page.jsx` only
+  ever handled the PKCE `?code=` flow — if Supabase actually returned a
+  hash-fragment session (`#access_token=...`) or an expired-link error
+  (`#error=...`), the page showed "Missing login code," which matches
+  exactly what was reported. It now checks (in order): an explicit hash
+  error, an already-established session (in case `detectSessionInUrl`
+  already parsed it), a PKCE `?code=` to exchange, and finally a brief
+  `onAuthStateChange` listener as a last resort before showing the new
+  friendly "This login link expired or was already used" message.
+- **Login page CTA overhauled.** The submit button is now a plain,
+  large, full-width, high-contrast orange `<button>` ("Send secure login
+  link"), not `BigButton`. The old "Continue with the demo account"
+  button (which duplicated `/demo`'s own logic) was replaced with a plain
+  `Link` to `/demo` itself — one less place that logic has to live.
+- **Demo usage limits** (`lib/demoLimits.js`) — 3 estimates, 5 AI draft
+  generations, 2 PDF downloads, 3 approvals, all via localStorage
+  counters, all checked *before* the action runs (a blocked attempt isn't
+  charged, so retrying after upgrading works immediately). Every call
+  site checks `dataSource === 'local'` / `isDemo` first — a real Supabase
+  session is never touched by this module at all.
+- **Demo/example outputs are now clearly marked.** `components/DemoBanner.jsx`'s
+  text is now "EXAMPLE QUOTE — NOT A VALID CONTRACT." Generated PDFs (and
+  the HTML fallback) now stamp a large diagonal "EXAMPLE / VOID" watermark
+  — driven by an explicit `isDemo` flag the Review/Quote pages set
+  themselves (since they already know their real data source), never
+  guessed at inside the PDF route.
+- **Founder plan now has real pricing data.** `lib/plans.js`'s `PLANS`
+  entries gained `price`/`priceNote`/`featureList` fields (Founder $10/mo,
+  Solo $29/mo, Pro $59/mo, Team $99/mo), and a new
+  `components/PricingTable.jsx` renders the full 4-plan comparison —
+  Founder shown first/highlighted regardless of `PLAN_ORDER`'s
+  feature-gating order, since that's a display choice, not a gating one.
+  Used on the landing page (`#pricing`) and linked to from Settings and
+  every `DemoLimitNotice`.
+- **Landing page**: "Log in" in the header is now a real styled button,
+  not a text link; "Try Demo" relabeled to "Try Limited Demo"; added
+  "Founder offer: first 10 contractors lock in $10/month" near the hero.
+
+**Supabase persistence (real wiring, not just the SQL foundation)**:
+`lib/supabaseEstimates.js` and `lib/supabaseSettings.js` are new async,
+Supabase-backed equivalents of `lib/localEstimates.js`/`lib/settings.js`.
+The Dashboard, `components/EstimateForm.jsx`, the Review page, the public
+quote page, and the Settings page all now check for a real Supabase session
+first and use these new modules when one exists — demo mode (no session)
+falls through to the exact same local-storage behavior as before. A new
+`customers` table was added (additive — estimates keep their own flattened
+customer columns as the source of truth; `customer_id` is an optional link
+for a future repeat-customer directory), and the public quote page now
+calls the `get_quote_by_token()` RPC instead of the stale `jobs`-table join
+left over from the original schema.
+
+**File storage (polish pass)**: `lib/supabaseStorage.js` is new —
+`uploadLogo`, `uploadEstimatePhoto`, `getEstimatePhotoUrl`. The logo
+uploader and job-photo uploader keep their exact original instant-preview
+behavior (base64 data URL / blob object URL) unchanged in both modes; in
+remote mode only, `app/settings/page.jsx` and `components/EstimateForm.jsx`
+additionally upload the real file to the matching Storage bucket and swap
+in the real URL once that finishes. `get_quote_by_token()` now also joins
+`contractor_settings`, so a real Supabase-backed quote's expiration date,
+footer text, license note, logo, and branding all come from the
+contractor's actual settings instead of hardcoded defaults.
+
+**Founding Contractor launch (this update)**:
+- **Landing page rewritten** (`app/page.jsx`) around the actual problem
+  (the gap between "I'll send the quote" and sending it) and a Founding
+  Contractor offer (first 10 contractors, $10/month locked for life while
+  subscribed, direct input into what gets built next, their branding on
+  every PDF/quote, future add-ons discounted while subscribed) — positioned
+  as building *with* 10 contractors, not a discount code. "Try Demo," "See
+  Sample Quote," and a new "Showcase" anchor section (same page, no new
+  route yet — a placeholder for real contractor examples later) are all
+  still there. The SnapQuote app logo itself (`components/Logo.jsx`) was
+  intentionally left untouched per the request — customer-facing documents
+  (PDF, quote page) carry the *contractor's* branding, not this one.
+- **New `founder` plan** in `lib/plans.js` — unlocks branding, estimate
+  history, and sharing (same as Pro), plus a `founderPricing` flag that
+  turns on the "🎉 Founding Contractor" locked-pricing banner in Settings.
+  `PLAN_ORDER` is now `['solo', 'founder', 'pro', 'team']`. The
+  `notifications` feature flag from the previous build was renamed to
+  `sharing` to match this update's terminology — same gate, new name, see
+  "Share Estimate" below for why.
+- **Share Estimate replaces the old email-sending UI.** New
+  `components/ShareEstimateModal.jsx` — Email Link (`mailto:`), Text Link
+  (`sms:`), Copy Link (clipboard), pre-filled from the estimate's
+  customer email/phone and the real quote URL. None of the three claim to
+  send anything from the app — they hand off to the contractor's own
+  device — so there's no "email sent" wording left anywhere in this flow.
+  Wired into both the Review page and Dashboard's per-row actions, gated
+  behind the `sharing` feature (Founder/Pro/Team).
+- **Magic-link login now actually completes.** `app/login/page.jsx` passes
+  `emailRedirectTo` (built from `NEXT_PUBLIC_SITE_URL`, falling back to
+  `window.location.origin`) pointing at a new `app/auth/callback/page.jsx`,
+  which calls `supabase.auth.exchangeCodeForSession()` using the same
+  client-side `supabase` instance the rest of the app already uses (no
+  `@supabase/ssr` needed — this app has no server-side auth layer to begin
+  with), then redirects to `/dashboard`. **You still need to add your
+  Netlify URL and custom domain's `/auth/callback` path to Supabase's own
+  Auth → URL Configuration → Redirect URLs allow-list** — that's a
+  dashboard setting on Supabase's side, not something this codebase can
+  configure for you.
+
+**Branding** (logo, accent color, warranty text, license number) already
+existed end-to-end from earlier phases (Settings → quote page → PDF). The
+actual gap was the Dashboard not visually applying it — fixed: the header
+now shows the contractor's logo/initials badge in their brand color.
+
+**Email notifications**: `app/api/send-email/route.js` (Resend as the
+example provider — demo placeholder with no `RESEND_API_KEY` configured,
+same pattern as `/api/transcribe`/`/api/draft-estimate`). "Send Estimate
+Email" / "Resend Quote Email" on the Review page, "Resend Quote" as a
+Dashboard row action.
+
+**Plans and feature gates** (`lib/plans.js`) — Solo / Pro / Team, no Stripe,
+no billing: a plan is just a stored value a contractor can switch instantly
+in Settings. Branding is gated to Pro+ (a locked upsell card shows on
+Solo); Dashboard history/search/filter is capped to the 5 most recent
+estimates on Solo; email notifications (Resend Quote / Send Estimate Email)
+are gated to Pro+; Team adds a placeholder "Invite Team Member" control
+(disabled — real multi-user auth/roles is a future build, this is the gate
+for it).
 
 **Built and wired up:**
 - Landing page (`/`)
@@ -440,6 +599,7 @@ Create `.env.local`:
 ```
 NEXT_PUBLIC_SUPABASE_URL=your-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_SITE_URL=https://yourdomain.com
 OPENAI_API_KEY=your-openai-key
 OPENAI_DRAFT_MODEL=gpt-4o-mini
 NEXT_PUBLIC_DEMO_MODE=false
@@ -511,8 +671,11 @@ tables (`estimates`, `estimate_line_items`, etc.) and the
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Real auth, real data | App runs entirely on demo/localStorage data |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Real auth, real data | Same as above |
+| `NEXT_PUBLIC_SITE_URL` | Magic-link login redirect (optional) | Falls back to `window.location.origin` at the moment the link is sent — works fine for a single environment, but set this explicitly if you have multiple (Netlify preview + custom domain) so the email always points at the one you want |
 | `OPENAI_API_KEY` | `/api/transcribe`, `/api/draft-estimate` | Both return their fixed demo response (`demo: true`) instead of erroring |
 | `OPENAI_DRAFT_MODEL` | `/api/draft-estimate` (optional) | Defaults to `gpt-4o-mini` — override if your account uses a different current model |
+| `RESEND_API_KEY` | `/api/send-email` (no longer used by the UI — see "Known Production Gaps") | Returns a demo placeholder (`demo: true`, nothing actually sent) instead of erroring |
+| `SEND_EMAIL_FROM` | `/api/send-email` (optional, same caveat) | Defaults to `estimates@snapquoteai.app` — must be a domain verified with your email provider in production |
 | `NEXT_PUBLIC_DEMO_MODE` | — | Cosmetic flag some pages read; the demo-vs-real behavior is actually driven by whether Supabase/OpenAI env vars are present, not this flag alone |
 
 `/api/generate-pdf` needs no environment variables — it never calls an
@@ -520,6 +683,24 @@ external service (pdf-lib runs entirely locally), so it behaves identically
 in demo and production. The only thing that varies is whether `pdf-lib`
 successfully renders a PDF or the route falls back to HTML — see "Known
 demo-mode limitations" above.
+
+### Supabase Auth redirect URLs (required for magic-link login to work)
+
+This is a setting on Supabase's side, not something in this codebase —
+**Supabase Dashboard → Authentication → URL Configuration → Redirect
+URLs** — add every URL the app might actually be served from, each with
+`/auth/callback` appended:
+
+```
+https://your-app.netlify.app/auth/callback
+https://yourdomain.com/auth/callback
+http://localhost:3000/auth/callback   (for local dev)
+```
+
+If the exact origin a magic link is sent from isn't on this list, Supabase
+will reject the redirect even though `emailRedirectTo` was set correctly
+in code — this is the most common reason a magic link "does nothing" after
+clicking it.
 
 ## Notes for whoever continues this build
 

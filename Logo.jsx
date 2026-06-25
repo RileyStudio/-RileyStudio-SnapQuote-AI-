@@ -14,6 +14,12 @@ import { computeSubtotals } from '@/lib/estimateMath';
 import { getSettings, defaultEstimateNotes } from '@/lib/settings';
 import { transcribeAudio, draftEstimateFromNotes } from '@/lib/apiClient';
 import { getEstimateById, saveEstimate, createEstimateId } from '@/lib/localEstimates';
+import { supabase } from '@/lib/supabaseClient';
+import { getEstimateByIdRemote, saveEstimateRemote } from '@/lib/supabaseEstimates';
+import { getSettingsRemote } from '@/lib/supabaseSettings';
+import { uploadEstimatePhoto } from '@/lib/supabaseStorage';
+import { tryConsumeDemoLimit } from '@/lib/demoLimits';
+import DemoLimitNotice from '@/components/DemoLimitNotice';
 
 function newLineItemId() {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -44,6 +50,11 @@ export default function EstimateForm({ estimateId }) {
     () => `SQ-${Math.floor(1000 + Math.random() * 9000)}`
   );
 
+  // 'local' = demo mode (lib/localEstimates.js / localStorage).
+  // 'remote' = a real Supabase session exists (lib/supabaseEstimates.js).
+  const [dataSource, setDataSource] = useState('local');
+  const [contractorId, setContractorId] = useState(null);
+
   const [customer, setCustomer] = useState({ name: '', phone: '', email: '', address: '' });
   const [job, setJob] = useState({ title: '', description: '', start_date: '', end_date: '' });
   const [lineItems, setLineItems] = useState([blankLineItem()]);
@@ -59,20 +70,70 @@ export default function EstimateForm({ estimateId }) {
   const [transcribing, setTranscribing] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [aiStatus, setAiStatus] = useState(null); // { type: 'error' | 'success', message }
+  const [limitNotice, setLimitNotice] = useState(null); // { label, max } | null — demo limits only
 
   // Load an existing record when editing, or prefill Notes/Terms defaults
-  // for a brand-new one. Client-only and runs once per estimateId, so it
-  // never causes a server/client hydration mismatch.
+  // for a brand-new one. Checks for a real Supabase session first (Phase
+  // 8); falls back to the existing local-storage logic when none exists.
+  // Client-only and runs once per estimateId, so it never causes a
+  // server/client hydration mismatch.
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    if (isEditing) {
-      const existing = getEstimateById(estimateId);
-      if (!existing) {
-        setNotFound(true);
+    async function load() {
+      let activeContractorId = null;
+      if (supabase) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        activeContractorId = sessionData?.session?.user?.id || null;
+      }
+
+      if (activeContractorId) {
+        setDataSource('remote');
+        setContractorId(activeContractorId);
+
+        if (isEditing) {
+          const existing = await getEstimateByIdRemote(estimateId);
+          if (!existing) {
+            setNotFound(true);
+            setLoadingRecord(false);
+            return;
+          }
+          applyExistingRecord(existing);
+          setLoadingRecord(false);
+          return;
+        }
+
+        const settings = await getSettingsRemote(activeContractorId);
+        const defaults = defaultEstimateNotes(settings.estimateTerms);
+        setNotes((prev) => ({ ...prev, warranty: defaults.warranty, payment_terms: defaults.payment_terms }));
         setLoadingRecord(false);
         return;
       }
+
+      setDataSource('local');
+
+      if (isEditing) {
+        const existing = getEstimateById(estimateId);
+        if (!existing) {
+          setNotFound(true);
+          setLoadingRecord(false);
+          return;
+        }
+        applyExistingRecord(existing);
+        setLoadingRecord(false);
+        return;
+      }
+
+      // Brand-new estimate — start Notes and Terms from the contractor's
+      // saved defaults (Settings → Default Estimate Terms), or the built-in
+      // demo defaults if nothing's been saved yet.
+      const settings = getSettings();
+      const defaults = defaultEstimateNotes(settings.estimateTerms);
+      setNotes((prev) => ({ ...prev, warranty: defaults.warranty, payment_terms: defaults.payment_terms }));
+      setLoadingRecord(false);
+    }
+
+    function applyExistingRecord(existing) {
       setRecordId(existing.id);
       setRecordStatus(existing.status);
       setTicketNumber(existing.ticket_number);
@@ -82,17 +143,9 @@ export default function EstimateForm({ estimateId }) {
       setPhotos(existing.photos || []);
       setNotes(existing.notes || { warranty: '', payment_terms: '', additional: '' });
       setTaxRate(existing.totals?.taxRate ?? 8.25);
-      setLoadingRecord(false);
-      return;
     }
 
-    // Brand-new estimate — start Notes and Terms from the contractor's
-    // saved defaults (Settings → Default Estimate Terms), or the built-in
-    // demo defaults if nothing's been saved yet.
-    const settings = getSettings();
-    const defaults = defaultEstimateNotes(settings.estimateTerms);
-    setNotes((prev) => ({ ...prev, warranty: defaults.warranty, payment_terms: defaults.payment_terms }));
-    setLoadingRecord(false);
+    load();
   }, [estimateId, isEditing]);
 
   const { laborSubtotal, materialsSubtotal } = useMemo(
@@ -102,24 +155,70 @@ export default function EstimateForm({ estimateId }) {
   const tax = useMemo(() => materialsSubtotal * (taxRate / 100), [materialsSubtotal, taxRate]);
   const total = laborSubtotal + materialsSubtotal + tax;
 
-  function buildEstimate() {
+  function buildEstimate(resolvedId, photosToUse) {
     return {
-      id: recordId || createEstimateId(),
+      id: resolvedId,
       ticket_number: ticketNumber,
       status: recordStatus,
       customer,
       job,
       lineItems,
-      // Drop the raw File object — only the blob preview URL and caption
-      // persist to localStorage. See PhotoUploader.jsx for the tradeoff.
-      photos: photos.map(({ id, caption, previewUrl }) => ({ id, caption, previewUrl })),
+      // Drop the raw File object — only the blob preview URL, caption, and
+      // (once uploaded) storage_path persist. See PhotoUploader.jsx for
+      // the local-mode preview-URL tradeoff.
+      photos: photosToUse.map(({ id, caption, previewUrl, storage_path }) => ({
+        id,
+        caption,
+        previewUrl,
+        storage_path,
+      })),
       notes,
       totals: { taxRate },
     };
   }
 
-  function persist() {
-    const saved = saveEstimate(buildEstimate());
+  async function persist() {
+    // Counts a new demo estimate only on its FIRST save (recordId not yet
+    // set) — re-saving/editing an estimate that already exists doesn't
+    // cost another slot. Never applies when dataSource is 'remote': a
+    // real Supabase session is never limited by this module.
+    if (dataSource === 'local' && !recordId) {
+      const result = tryConsumeDemoLimit('estimate');
+      if (!result.allowed) {
+        setLimitNotice({ label: result.label, max: result.max });
+        return null;
+      }
+    }
+    setLimitNotice(null);
+
+    const resolvedId = recordId || createEstimateId();
+    let photosToUse = photos;
+
+    if (dataSource === 'remote') {
+      // Upload any newly-added photos (still carrying a raw File) to
+      // Storage before saving — already-uploaded ones (loaded back from
+      // an existing record, which never have a File) pass through as-is.
+      // An individual upload failure never blocks the rest of the save;
+      // that photo just falls back to its local-only preview for now.
+      photosToUse = await Promise.all(
+        photos.map(async (photo) => {
+          if (!photo.file) return photo;
+          try {
+            const result = await uploadEstimatePhoto(contractorId, resolvedId, photo.file);
+            if (!result) return photo;
+            return { id: photo.id, caption: photo.caption, storage_path: result.path, previewUrl: result.url };
+          } catch (e) {
+            return photo;
+          }
+        })
+      );
+      setPhotos(photosToUse);
+    }
+
+    const built = buildEstimate(resolvedId, photosToUse);
+    const saved =
+      dataSource === 'remote' ? await saveEstimateRemote(built, contractorId) : saveEstimate(built);
+
     if (!recordId) {
       setRecordId(saved.id);
       // Update the URL in place (no new history entry) so a reload of
@@ -130,14 +229,16 @@ export default function EstimateForm({ estimateId }) {
     return saved;
   }
 
-  function saveDraft() {
-    persist();
+  async function saveDraft() {
+    const saved = await persist();
+    if (!saved) return; // blocked by a demo limit — the notice is already showing
     setSavedMessage('Draft saved.');
     setTimeout(() => setSavedMessage(''), 2500);
   }
 
-  function reviewEstimate() {
-    const saved = persist();
+  async function reviewEstimate() {
+    const saved = await persist();
+    if (!saved) return;
     router.push(`/estimates/${saved.id}/review`);
   }
 
@@ -169,6 +270,16 @@ export default function EstimateForm({ estimateId }) {
       setAiStatus({ type: 'error', message: 'Add some job notes or transcribe a voice note first.' });
       return;
     }
+
+    if (dataSource === 'local') {
+      const result = tryConsumeDemoLimit('aiDraft');
+      if (!result.allowed) {
+        setLimitNotice({ label: result.label, max: result.max });
+        return;
+      }
+      setLimitNotice(null);
+    }
+
     setDrafting(true);
     setAiStatus(null);
     try {
@@ -271,6 +382,12 @@ export default function EstimateForm({ estimateId }) {
         </div>
         <Logo size="sm" />
       </header>
+
+      {limitNotice && (
+        <div className="mb-6">
+          <DemoLimitNotice label={limitNotice.label} max={limitNotice.max} />
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">

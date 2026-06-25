@@ -47,6 +47,9 @@ create table if not exists contractors (
   brand_color text not null default '#FF5A1F',
   license_note text,
   footer_text text,
+  -- Phase 11 — feature gating only, no billing wired up. See
+  -- lib/plans.js for what each tier unlocks in the app.
+  plan text not null default 'solo' check (plan in ('solo', 'founder', 'pro', 'team')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -68,6 +71,32 @@ create table if not exists contractor_settings (
 );
 
 -- ─────────────────────────────────────────────────────────
+-- 3b. customers — a repeat-customer directory (Phase 8). Additive: the
+--    estimates table below keeps its own flattened customer_name/phone/
+--    email/address columns as the source of truth for what an estimate
+--    actually displays (so existing functions/queries don't need to
+--    change), and gets an optional customer_id pointing here so the same
+--    person can be recognized/reused across multiple estimates.
+-- ─────────────────────────────────────────────────────────
+create table if not exists customers (
+  id uuid primary key default uuid_generate_v4(),
+  contractor_id uuid not null references contractors(id) on delete cascade,
+  name text,
+  phone text,
+  email text,
+  address text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_customers_contractor_id on customers(contractor_id);
+
+drop trigger if exists trg_customers_updated_at on customers;
+create trigger trg_customers_updated_at
+  before update on customers
+  for each row execute function set_updated_at();
+
+-- ─────────────────────────────────────────────────────────
 -- 4. estimates — the core entity. One row per estimate, matching
 --    lib/localEstimates.js's record shape: customer + job info live
 --    directly on the row (flattened, like the app's own JS objects),
@@ -82,6 +111,7 @@ create table if not exists contractor_settings (
 create table if not exists estimates (
   id uuid primary key default uuid_generate_v4(),
   contractor_id uuid not null references contractors(id) on delete cascade,
+  customer_id uuid references customers(id) on delete set null,
   ticket_number text,
   status text not null default 'draft' check (status in ('draft', 'sent', 'approved')),
 
@@ -262,10 +292,10 @@ create trigger on_auth_user_created
 -- ─────────────────────────────────────────────────────────
 
 -- Bundles everything app/quote/[id]/page.jsx needs — the estimate, its
--- contractor's branding, line items, and photos — into one call, scoped
--- to exactly one token. Returns null if the token doesn't match a
--- sent/approved estimate (never reveals whether a token is "almost
--- right" or simply wrong).
+-- contractor's branding AND default settings (expiration_days), line
+-- items, and photos — into one call, scoped to exactly one token. Returns
+-- null if the token doesn't match a sent/approved estimate (never reveals
+-- whether a token is "almost right" or simply wrong).
 create or replace function get_quote_by_token(p_token uuid)
 returns jsonb
 language plpgsql
@@ -277,7 +307,11 @@ declare
 begin
   select jsonb_build_object(
     'estimate', to_jsonb(e) - 'contractor_id',
-    'contractor', to_jsonb(c) - 'id',
+    -- Branding columns (business_name, logo_url, brand_color, license_note,
+    -- footer_text, etc.) come straight off contractors; expiration_days
+    -- lives on the separate contractor_settings row, merged in here so the
+    -- caller gets one flat contractor-ish object instead of two.
+    'contractor', (to_jsonb(c) - 'id') || jsonb_build_object('expiration_days', coalesce(cs.expiration_days, 14)),
     'line_items', coalesce(
       (select jsonb_agg(to_jsonb(li) order by li.sort_order)
        from estimate_line_items li where li.estimate_id = e.id),
@@ -292,6 +326,7 @@ begin
   into v_result
   from estimates e
   join contractors c on c.id = e.contractor_id
+  left join contractor_settings cs on cs.contractor_id = c.id
   where e.public_quote_token = p_token
     and e.status in ('sent', 'approved');
 

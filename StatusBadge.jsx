@@ -2,7 +2,7 @@
 
 import { useRef } from 'react';
 
-export default function LogoUploader({ logoDataUrl, brandColor, initials, onChange }) {
+export default function LogoUploader({ logoDataUrl, brandColor, initials, onChange, onFileSelected }) {
   const inputRef = useRef(null);
 
   function handleFile(file) {
@@ -13,6 +13,11 @@ export default function LogoUploader({ logoDataUrl, brandColor, initials, onChan
     const reader = new FileReader();
     reader.onload = () => onChange(reader.result);
     reader.readAsDataURL(file);
+
+    // Separate from the preview above — lets the parent also upload the
+    // real file to Supabase Storage when a real session exists, without
+    // this component needing to know anything about Supabase itself.
+    onFileSelected?.(file);
   }
 
   return (

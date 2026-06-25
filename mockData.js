@@ -8,6 +8,7 @@ export const SETTINGS_KEY = 'snapquote_settings';
 // fallback work for free: getSettings() already returns these defaults
 // when localStorage is empty.
 export const DEFAULT_SETTINGS = {
+  plan: 'solo',
   businessProfile: {
     business_name: demoContractor.business_name,
     owner_name: 'Joseph Riley',
