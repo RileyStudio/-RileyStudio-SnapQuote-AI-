@@ -79,33 +79,34 @@ export default function LandingPage() {
             First 10 only
           </p>
           <h2 className="font-display font-extrabold text-3xl sm:text-4xl leading-tight mb-4">
-            We&apos;re building this with 10 contractors. Not for a market.
+            We&apos;re building this with 10 contractors first.
           </h2>
-          <p className="text-paper/80 max-w-xl mb-8">
-            SnapQuote isn&apos;t finished. We&apos;re looking for 10 contractors to help finish
-            it, in exchange for the best deal this product will ever offer — and it gets worse
-            for everyone after these 10 seats are gone.
+          <p className="text-paper/80 max-w-xl mb-3">
+            SnapQuote is opening early access to 10 contractors who want faster estimates,
+            branded quotes, customer approval links, and a say in what gets built next.
+          </p>
+          <p className="text-paper/60 text-sm max-w-xl mb-8">
+            After the first 10 seats are filled, pricing and access will move to the standard
+            public plans.
           </p>
 
           <ul className="space-y-4 mb-10">
             <FounderPoint>
-              <strong className="text-paper">$10/month, locked in for life</strong> — as long as
-              you stay subscribed. Not an intro price. Not a teaser rate that jumps in 90 days.
+              <strong className="text-paper">$10/month, locked in for life</strong> as long as
+              you stay subscribed. Not a teaser rate. Not a 90-day discount.
             </FounderPoint>
             <FounderPoint>
-              <strong className="text-paper">A direct line to the person building this.</strong>{' '}
-              You tell us what&apos;s broken or missing on your jobs, we build that next — not a
-              support ticket queue, not a roadmap vote nobody reads.
+              <strong className="text-paper">A direct line to the builder.</strong> Tell us what
+              slows you down on real jobs, and we use that feedback to shape the product.
             </FounderPoint>
             <FounderPoint>
               <strong className="text-paper">Your logo and branding on every PDF and quote
-              page</strong> your customers see. It looks like it came from your business —
-              because it did.
+              page</strong> your customers see. It looks like it came from your business because
+              it did.
             </FounderPoint>
             <FounderPoint>
-              <strong className="text-paper">Every future add-on stays discounted for you</strong>{' '}
-              for as long as you&apos;re subscribed. Built-with gets priced different than
-              bought-later.
+              <strong className="text-paper">Discounted access to future add-ons</strong> for as
+              long as you stay subscribed.
             </FounderPoint>
           </ul>
 
@@ -117,7 +118,7 @@ export default function LandingPage() {
             Become a Founding Contractor
           </Link>
           <p className="text-paper/50 text-xs mt-3">
-            No payment collected yet — this is early access. Pricing locks in when billing goes live.
+            No payment collected yet. Early access pricing locks in when billing goes live.
           </p>
         </div>
       </section>

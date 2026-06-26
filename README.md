@@ -131,12 +131,13 @@ This is a fully-clickable demo, not a production-deployed SaaS. Specifically:
   contractor's settings for Supabase-backed estimates, not a hardcoded
   14-day default.
 - **Auth gating is demo-friendly, not production-hardened.** The login
-  page's "Continue with the demo account" bypass and every demo-mode page
-  just render local data without checking for a real session — there's no
+  page's "Launch limited demo" bypass and every demo-mode page just
+  render local data without checking for a real session — there's no
   middleware or layout-level route protection. Fine for a sales demo, not
-  fine for real customer data. **Magic-link login now redirects through a
-  real `/auth/callback` exchange** (see below) instead of landing nowhere,
-  but the underlying gating story is unchanged.
+  fine for real customer data. Real login is now email + password
+  (`app/login/page.jsx`) and routes straight to `/dashboard` on success —
+  see "Supabase Auth settings" below for the one Supabase-side setting
+  this depends on.
 - **"Email sending" is no longer presented as an app feature.** The old
   "Send Estimate Email"/"Resend Quote" buttons (which only ever sent a
   real email if `RESEND_API_KEY` was configured, and showed a demo
@@ -170,20 +171,26 @@ below by content (Supabase persistence, branding, email, plans) rather than
 by number.
 
 **Demo Limits + Auth Polish + Pricing Clarity (this phase)**:
-- **Fixed the magic-link login bug.** `app/auth/callback/page.jsx` only
-  ever handled the PKCE `?code=` flow — if Supabase actually returned a
-  hash-fragment session (`#access_token=...`) or an expired-link error
-  (`#error=...`), the page showed "Missing login code," which matches
-  exactly what was reported. It now checks (in order): an explicit hash
-  error, an already-established session (in case `detectSessionInUrl`
-  already parsed it), a PKCE `?code=` to exchange, and finally a brief
-  `onAuthStateChange` listener as a last resort before showing the new
-  friendly "This login link expired or was already used" message.
-- **Login page CTA overhauled.** The submit button is now a plain,
-  large, full-width, high-contrast orange `<button>` ("Send secure login
-  link"), not `BigButton`. The old "Continue with the demo account"
-  button (which duplicated `/demo`'s own logic) was replaced with a plain
-  `Link` to `/demo` itself — one less place that logic has to live.
+- **Login replaced: magic-link → email + password.** Multiple passes at
+  getting magic-link auth working reliably (PKCE, hash tokens, redirect
+  URL edge cases) kept hitting the same wall: it requires the contractor
+  to leave the app to click an email link, and that hop is exactly where
+  things kept breaking. `app/login/page.jsx` now has real email +
+  password fields and two actions — **Create account**
+  (`supabase.auth.signUp`) and **Log in** (`supabase.auth.signInWithPassword`)
+  — both routing straight to `/dashboard` on success, no email step in
+  the middle at all. This depends on one Supabase-side setting; see
+  "Supabase Auth settings" below. `app/auth/callback/page.jsx` still
+  exists, now purely as a fallback for a confirmation-link `?code=` on
+  projects that leave that setting on — reads `window.location.search`
+  directly (no `useSearchParams()`/Suspense needed), exchanges the code,
+  and either lands on `/dashboard` or shows "This link expired or was
+  already used. Please log in again." with a button back to `/login`.
+- **Login page CTA overhauled.** Both auth buttons are plain, large,
+  high-contrast native `<button>`s, not `BigButton` — Create account
+  (orange, primary) and Log in (outlined, secondary) — plus a separate
+  "Launch limited demo" `Link` to `/demo` itself, which already owns the
+  entire "enter demo mode" sequence (one less place that logic has to live).
 - **Demo usage limits** (`lib/demoLimits.js`) — 3 estimates, 5 AI draft
   generations, 2 PDF downloads, 3 approvals, all via localStorage
   counters, all checked *before* the action runs (a blocked attempt isn't
@@ -259,17 +266,6 @@ contractor's actual settings instead of hardcoded defaults.
   device — so there's no "email sent" wording left anywhere in this flow.
   Wired into both the Review page and Dashboard's per-row actions, gated
   behind the `sharing` feature (Founder/Pro/Team).
-- **Magic-link login now actually completes.** `app/login/page.jsx` passes
-  `emailRedirectTo` (built from `NEXT_PUBLIC_SITE_URL`, falling back to
-  `window.location.origin`) pointing at a new `app/auth/callback/page.jsx`,
-  which calls `supabase.auth.exchangeCodeForSession()` using the same
-  client-side `supabase` instance the rest of the app already uses (no
-  `@supabase/ssr` needed — this app has no server-side auth layer to begin
-  with), then redirects to `/dashboard`. **You still need to add your
-  Netlify URL and custom domain's `/auth/callback` path to Supabase's own
-  Auth → URL Configuration → Redirect URLs allow-list** — that's a
-  dashboard setting on Supabase's side, not something this codebase can
-  configure for you.
 
 **Branding** (logo, accent color, warranty text, license number) already
 existed end-to-end from earlier phases (Settings → quote page → PDF). The
@@ -293,8 +289,9 @@ for it).
 
 **Built and wired up:**
 - Landing page (`/`)
-- Login page (`/login`) — real Supabase magic-link auth code, plus a demo-account
-  bypass so the product can be clicked through with zero configuration
+- Login page (`/login`) — real Supabase email + password auth (Create
+  account / Log in), plus a "Launch limited demo" link, so the product
+  can be clicked through with zero configuration
 - **Dashboard (`/dashboard`)** — reads from Supabase if configured;
   otherwise loads real local estimate records first (`lib/localEstimates.js`),
   falling back to the static `lib/mockData.js` sample rows only when no
@@ -671,7 +668,7 @@ tables (`estimates`, `estimate_line_items`, etc.) and the
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Real auth, real data | App runs entirely on demo/localStorage data |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Real auth, real data | Same as above |
-| `NEXT_PUBLIC_SITE_URL` | Magic-link login redirect (optional) | Falls back to `window.location.origin` at the moment the link is sent — works fine for a single environment, but set this explicitly if you have multiple (Netlify preview + custom domain) so the email always points at the one you want |
+| `NEXT_PUBLIC_SITE_URL` | Confirmation-link fallback only (optional) | `app/login/page.jsx`'s `signUp()` call omits `emailRedirectTo` entirely if this isn't set — doesn't block account creation either way, since it's only consequential if "Confirm email" is left on (see "Supabase Auth settings" below) |
 | `OPENAI_API_KEY` | `/api/transcribe`, `/api/draft-estimate` | Both return their fixed demo response (`demo: true`) instead of erroring |
 | `OPENAI_DRAFT_MODEL` | `/api/draft-estimate` (optional) | Defaults to `gpt-4o-mini` — override if your account uses a different current model |
 | `RESEND_API_KEY` | `/api/send-email` (no longer used by the UI — see "Known Production Gaps") | Returns a demo placeholder (`demo: true`, nothing actually sent) instead of erroring |
@@ -684,23 +681,42 @@ in demo and production. The only thing that varies is whether `pdf-lib`
 successfully renders a PDF or the route falls back to HTML — see "Known
 demo-mode limitations" above.
 
-### Supabase Auth redirect URLs (required for magic-link login to work)
+### Supabase Auth settings
 
-This is a setting on Supabase's side, not something in this codebase —
-**Supabase Dashboard → Authentication → URL Configuration → Redirect
-URLs** — add every URL the app might actually be served from, each with
-`/auth/callback` appended:
+Two settings on Supabase's side matter for login to work the way this app
+expects — neither is something this codebase can configure for you.
+
+**1. Authentication → Providers → Email → "Confirm email" should be OFF.**
+This is the important one. Login is real email + password
+(`app/login/page.jsx`: `signUp()` / `signInWithPassword()`), and the goal
+is that creating an account never requires leaving the app to click an
+email link. With "Confirm email" **off**, `signUp()` returns a real
+session immediately and the app routes straight to `/dashboard`. With it
+**on**, Supabase withholds the session until the confirmation link is
+clicked — `signUp()` returns no session, the login page shows "Account
+created. Check your email to confirm, then log in," and the contractor
+has to leave the app after all. The product is built around the former;
+the latter still works, just not the way this was designed to feel.
+
+**2. Authentication → URL Configuration** (only matters if you leave
+"Confirm email" on, since that's the only case that sends a link
+anywhere):
+
+- **Site URL** = your production Netlify URL (e.g. `https://your-site.netlify.app`)
+- **Redirect URLs** should include `https://YOUR-SITE.netlify.app/auth/callback`
+  — and the same `/auth/callback` path for any custom domain too, e.g.:
 
 ```
-https://your-app.netlify.app/auth/callback
+https://your-site.netlify.app/auth/callback
 https://yourdomain.com/auth/callback
-http://localhost:3000/auth/callback   (for local dev)
 ```
 
-If the exact origin a magic link is sent from isn't on this list, Supabase
-will reject the redirect even though `emailRedirectTo` was set correctly
-in code — this is the most common reason a magic link "does nothing" after
-clicking it.
+`app/auth/callback/page.jsx` exists purely as a fallback for that
+confirmation-link case: it reads `?code=` from `window.location.search`,
+calls `exchangeCodeForSession`, and either lands on `/dashboard` or shows
+"This link expired or was already used. Please log in again." with a
+button back to `/login`. If "Confirm email" is off, a contractor never
+lands on this page at all during normal signup/login.
 
 ## Notes for whoever continues this build
 
