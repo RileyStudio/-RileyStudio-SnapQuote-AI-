@@ -17,6 +17,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { getEstimateByIdRemote, markEstimateSentRemote } from '@/lib/supabaseEstimates';
 import { getSettingsRemote } from '@/lib/supabaseSettings';
 import { hasFeature, planLabel } from '@/lib/plans';
+import { tryConsumeDemoLimit } from '@/lib/demoLimits';
+import DemoLimitNotice from '@/components/DemoLimitNotice';
 
 export default function EstimateReviewPage({ params }) {
   const { id } = params;
@@ -29,6 +31,7 @@ export default function EstimateReviewPage({ params }) {
   const [downloadError, setDownloadError] = useState('');
   const [downloadNotice, setDownloadNotice] = useState('');
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [limitNotice, setLimitNotice] = useState(null);
 
   // 'local' = demo mode. 'remote' = a real Supabase session exists.
   const [dataSource, setDataSource] = useState('local');
@@ -124,6 +127,15 @@ export default function EstimateReviewPage({ params }) {
   }
 
   async function handleDownload() {
+    if (dataSource === 'local') {
+      const result = tryConsumeDemoLimit('pdf');
+      if (!result.allowed) {
+        setLimitNotice({ label: result.label, max: result.max });
+        return;
+      }
+      setLimitNotice(null);
+    }
+
     setDownloading(true);
     setDownloadError('');
     setDownloadNotice('');
@@ -131,7 +143,7 @@ export default function EstimateReviewPage({ params }) {
       // The estimate record doesn't carry contractor branding itself —
       // that lives in Settings — and the generate-pdf route still expects
       // a flat taxRate, not the nested totals.taxRate this record stores.
-      const payload = { ...estimate, contractor: previewContractor, taxRate };
+      const payload = { ...estimate, contractor: previewContractor, taxRate, isDemo: dataSource !== 'remote' };
       const result = await generateQuotePdf(payload);
 
       if (result.type === 'pdf') {
@@ -158,6 +170,12 @@ export default function EstimateReviewPage({ params }) {
         </div>
         <Logo size="sm" />
       </header>
+
+      {limitNotice && (
+        <div className="mb-4">
+          <DemoLimitNotice label={limitNotice.label} max={limitNotice.max} />
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mb-4 bg-white rounded-card shadow-card px-4 py-3">
         <div

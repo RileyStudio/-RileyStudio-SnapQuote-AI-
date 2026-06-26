@@ -104,6 +104,11 @@ function normalizeQuoteForPdf(quote) {
       paymentTerms: quote.notes?.payment_terms || '',
       additionalNotes: quote.notes?.additional || '',
       approvedAt: quote.approved_at || null,
+      // Set explicitly by the caller (Review/Quote pages already know
+      // whether this record is Supabase-backed or local/demo) — this
+      // route never guesses at it. Drives the EXAMPLE/VOID watermark
+      // below; never true for an authenticated Supabase-backed estimate.
+      isDemo: Boolean(quote.isDemo),
     };
   }
 
@@ -144,6 +149,7 @@ function normalizeQuoteForPdf(quote) {
     paymentTerms: '',
     additionalNotes: quote.recommendations || '',
     approvedAt: quote.approved_at || null,
+    isDemo: Boolean(quote.isDemo),
   };
 }
 
@@ -152,7 +158,7 @@ function normalizeQuoteForPdf(quote) {
 // ─────────────────────────────────────────────────────────
 
 async function buildQuotePdf(data) {
-  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const { PDFDocument, StandardFonts, rgb, degrees } = await import('pdf-lib');
 
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -339,6 +345,26 @@ async function buildQuotePdf(data) {
     drawWrapped(data.footerText, { size: 9, color: gray });
   }
 
+  // EXAMPLE/VOID watermark — demo/local estimates only, never for an
+  // authenticated Supabase-backed one (data.isDemo is set explicitly by
+  // the caller in normalizeQuoteForPdf, not guessed at here). Stamped
+  // across every page (not just the first), in case content overflowed.
+  if (data.isDemo) {
+    const watermarkColor = rgb(0.78, 0.18, 0.12);
+    pdfDoc.getPages().forEach((p) => {
+      const { width, height } = p.getSize();
+      p.drawText('EXAMPLE / VOID', {
+        x: width / 2 - 230,
+        y: height / 2,
+        size: 46,
+        font: boldFont,
+        color: watermarkColor,
+        opacity: 0.28,
+        rotate: degrees(-30),
+      });
+    });
+  }
+
   return pdfDoc.save();
 }
 
@@ -398,6 +424,13 @@ function buildQuoteHtml(data) {
 </style>
 </head>
 <body>
+  ${
+    data.isDemo
+      ? `<div style="position:fixed;top:42%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);
+          font-size:64px;font-weight:800;color:rgba(199,46,31,0.28);font-family:Arial,Helvetica,sans-serif;
+          white-space:nowrap;z-index:999;pointer-events:none;">EXAMPLE / VOID</div>`
+      : ''
+  }
   <div class="sheet">
     <h1>${escapeHtml(data.businessName)}</h1>
     <p class="muted">${escapeHtml(data.licenseNote)}</p>

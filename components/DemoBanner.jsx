@@ -6,7 +6,7 @@ export default function DemoBanner() {
     <div className="sticky top-0 z-50">
       <div className="h-2" style={{ backgroundImage: STRIPES }} />
       <div className="bg-ink text-paper text-center py-1.5 px-3 text-xs font-display font-semibold uppercase tracking-wider">
-        Demo Quote View — sample estimate, not a real job
+        EXAMPLE QUOTE — NOT A VALID CONTRACT
       </div>
       <div className="h-2" style={{ backgroundImage: STRIPES }} />
     </div>

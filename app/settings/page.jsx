@@ -174,13 +174,19 @@ export default function SettingsPage() {
                       </span>
                     )}
                   </p>
+                  <p className="font-display font-extrabold text-base mt-0.5">{PLANS[p].price}</p>
                   <p className="text-xs text-ink/60 mt-1">{PLANS[p].tagline}</p>
                 </button>
               );
             })}
           </div>
           <p className="text-xs text-ink/45 mt-3">
-            No payment required — this switches your plan instantly for demo purposes.
+            No payment required — this switches your plan instantly for demo purposes. Full
+            feature comparison is on the{' '}
+            <Link href="/#pricing" className="underline">
+              landing page
+            </Link>
+            .
           </p>
           {hasFeature(plan, 'founderPricing') && (
             <div className="mt-4 rounded-card bg-ink text-paper px-4 py-3">

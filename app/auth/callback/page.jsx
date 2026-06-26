@@ -1,53 +1,63 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Logo from '@/components/Logo';
 
-// Exchanges the ?code=... Supabase puts on the magic-link redirect for a
-// real session, using the same client-side `supabase` instance the rest
-// of the app already uses (lib/supabaseClient.js) — this app has no
-// server-side/SSR auth layer, so there's no separate server client to
-// route this through. exchangeCodeForSession() works fine client-side;
-// the resulting session is stored the same way signInWithOtp's eventual
-// session would have been.
-function AuthCallbackInner() {
+// Login itself is email + password now (app/login/page.jsx) — this page
+// is only a fallback for a Supabase EMAIL CONFIRMATION link, for projects
+// where "Confirm email" is left on (see README). If it's off, as
+// recommended, a contractor never lands here at all: signUp() returns a
+// session immediately and app/login/page.jsx routes straight to
+// /dashboard itself. Deliberately simple either way: reads ?code= from
+// window.location.search (not useSearchParams(), so no Suspense boundary
+// needed), exchanges it, and either lands on /dashboard or shows a
+// friendly expired/used message with a way back to /login.
+export default function AuthCallbackPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [error, setError] = useState('');
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    async function exchange() {
+    async function run() {
       if (!supabase) {
         router.replace('/login');
         return;
       }
 
-      const code = searchParams.get('code');
+      const code = new URLSearchParams(window.location.search).get('code');
+
       if (!code) {
-        setError('Missing login code — the link may have expired. Request a new one from the login page.');
+        setError(true);
         return;
       }
 
       const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
       if (exchangeError) {
-        setError(exchangeError.message);
+        setError(true);
         return;
       }
 
       router.replace('/dashboard');
     }
-    exchange();
-  }, [searchParams, router]);
+
+    run();
+  }, [router]);
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-5 text-center">
       <Logo size="lg" className="justify-center mb-6" />
       {error ? (
         <>
-          <p className="text-sm text-orange-dark max-w-sm mb-4">{error}</p>
-          <a href="/login" className="text-sm font-display font-semibold text-site underline">
+          <p className="text-sm text-orange-dark max-w-sm mb-4">
+            This link expired or was already used. Please log in again.
+          </p>
+          <a
+            href="/login"
+            className="tap-target inline-flex items-center justify-center rounded-card bg-orange
+              text-white font-display font-bold text-base px-6 hover:bg-orange-dark transition-colors"
+          >
             Back to login
           </a>
         </>
@@ -55,19 +65,5 @@ function AuthCallbackInner() {
         <p className="text-ink/50 font-display font-semibold">Signing you in…</p>
       )}
     </main>
-  );
-}
-
-export default function AuthCallbackPage() {
-  return (
-    <Suspense
-      fallback={
-        <main className="min-h-screen flex items-center justify-center">
-          <p className="text-ink/50">Loading…</p>
-        </main>
-      }
-    >
-      <AuthCallbackInner />
-    </Suspense>
   );
 }

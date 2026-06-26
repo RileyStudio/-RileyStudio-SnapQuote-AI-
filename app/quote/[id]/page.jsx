@@ -15,6 +15,8 @@ import { getSettings, contractorFromSettings, initialsOf } from '@/lib/settings'
 import { generateQuotePdf, downloadBlobFile, downloadHtmlFile } from '@/lib/apiClient';
 import { getEstimateById, markEstimateApproved } from '@/lib/localEstimates';
 import { getEstimatePhotoUrl } from '@/lib/supabaseStorage';
+import { tryConsumeDemoLimit } from '@/lib/demoLimits';
+import DemoLimitNotice from '@/components/DemoLimitNotice';
 
 export default function CustomerQuotePage({ params }) {
   const { id } = params;
@@ -28,6 +30,7 @@ export default function CustomerQuotePage({ params }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
   const [downloadNotice, setDownloadNotice] = useState('');
+  const [limitNotice, setLimitNotice] = useState(null);
 
   // Load the quote: try Supabase by public_token first, fall back to demo
   // data for any id when Supabase isn't configured or the token doesn't
@@ -75,6 +78,15 @@ export default function CustomerQuotePage({ params }) {
   }, [id]);
 
   async function handleApprove() {
+    if (isDemo) {
+      const result = tryConsumeDemoLimit('approval');
+      if (!result.allowed) {
+        setLimitNotice({ label: result.label, max: result.max });
+        return;
+      }
+      setLimitNotice(null);
+    }
+
     setSubmitting(true);
 
     let finalApprovedAt = new Date().toISOString();
@@ -98,6 +110,15 @@ export default function CustomerQuotePage({ params }) {
   }
 
   async function handleDownload() {
+    if (isDemo) {
+      const result = tryConsumeDemoLimit('pdf');
+      if (!result.allowed) {
+        setLimitNotice({ label: result.label, max: result.max });
+        return;
+      }
+      setLimitNotice(null);
+    }
+
     setDownloading(true);
     setDownloadError('');
     setDownloadNotice('');
@@ -106,7 +127,7 @@ export default function CustomerQuotePage({ params }) {
       // `quote` object itself, so the current approval status is merged
       // in here — otherwise a freshly-approved quote would export as if
       // it were still pending.
-      const payload = { ...quote, approved_at: approved ? approvedAt : null };
+      const payload = { ...quote, approved_at: approved ? approvedAt : null, isDemo };
       const result = await generateQuotePdf(payload);
 
       if (result.type === 'pdf') {
@@ -135,6 +156,12 @@ export default function CustomerQuotePage({ params }) {
       {isDemo && <DemoBanner />}
 
       <div className="max-w-lg mx-auto px-5 pt-6">
+        {limitNotice && (
+          <div className="mb-6">
+            <DemoLimitNotice label={limitNotice.label} max={limitNotice.max} />
+          </div>
+        )}
+
         {/* Contractor branding */}
         <header className="flex items-center gap-3 mb-6">
           <div

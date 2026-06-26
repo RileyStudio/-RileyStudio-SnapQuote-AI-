@@ -18,6 +18,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { getEstimateByIdRemote, saveEstimateRemote } from '@/lib/supabaseEstimates';
 import { getSettingsRemote } from '@/lib/supabaseSettings';
 import { uploadEstimatePhoto } from '@/lib/supabaseStorage';
+import { tryConsumeDemoLimit } from '@/lib/demoLimits';
+import DemoLimitNotice from '@/components/DemoLimitNotice';
 
 function newLineItemId() {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -68,6 +70,7 @@ export default function EstimateForm({ estimateId }) {
   const [transcribing, setTranscribing] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [aiStatus, setAiStatus] = useState(null); // { type: 'error' | 'success', message }
+  const [limitNotice, setLimitNotice] = useState(null); // { label, max } | null — demo limits only
 
   // Load an existing record when editing, or prefill Notes/Terms defaults
   // for a brand-new one. Checks for a real Supabase session first (Phase
@@ -175,6 +178,19 @@ export default function EstimateForm({ estimateId }) {
   }
 
   async function persist() {
+    // Counts a new demo estimate only on its FIRST save (recordId not yet
+    // set) — re-saving/editing an estimate that already exists doesn't
+    // cost another slot. Never applies when dataSource is 'remote': a
+    // real Supabase session is never limited by this module.
+    if (dataSource === 'local' && !recordId) {
+      const result = tryConsumeDemoLimit('estimate');
+      if (!result.allowed) {
+        setLimitNotice({ label: result.label, max: result.max });
+        return null;
+      }
+    }
+    setLimitNotice(null);
+
     const resolvedId = recordId || createEstimateId();
     let photosToUse = photos;
 
@@ -214,13 +230,15 @@ export default function EstimateForm({ estimateId }) {
   }
 
   async function saveDraft() {
-    await persist();
+    const saved = await persist();
+    if (!saved) return; // blocked by a demo limit — the notice is already showing
     setSavedMessage('Draft saved.');
     setTimeout(() => setSavedMessage(''), 2500);
   }
 
   async function reviewEstimate() {
     const saved = await persist();
+    if (!saved) return;
     router.push(`/estimates/${saved.id}/review`);
   }
 
@@ -252,6 +270,16 @@ export default function EstimateForm({ estimateId }) {
       setAiStatus({ type: 'error', message: 'Add some job notes or transcribe a voice note first.' });
       return;
     }
+
+    if (dataSource === 'local') {
+      const result = tryConsumeDemoLimit('aiDraft');
+      if (!result.allowed) {
+        setLimitNotice({ label: result.label, max: result.max });
+        return;
+      }
+      setLimitNotice(null);
+    }
+
     setDrafting(true);
     setAiStatus(null);
     try {
@@ -354,6 +382,12 @@ export default function EstimateForm({ estimateId }) {
         </div>
         <Logo size="sm" />
       </header>
+
+      {limitNotice && (
+        <div className="mb-6">
+          <DemoLimitNotice label={limitNotice.label} max={limitNotice.max} />
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
