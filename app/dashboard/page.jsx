@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [confirmingDeleteId, setConfirmingDeleteId] = useState(null);
   const [actionMessage, setActionMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [isDemoSession, setIsDemoSession] = useState(false);
   const [shareJob, setShareJob] = useState(null);
   const [plan, setPlan] = useState('solo');
@@ -84,9 +85,16 @@ export default function DashboardPage() {
 
           // Phase 8: queries the real `estimates` table (joined with its
           // line items) instead of the old, now-removed `jobs` table.
-          const remoteEstimates = await getAllEstimatesRemote(userId);
-          setJobs(remoteEstimates.map((r) => toRow(r, true)));
-          setShowingStaticSamples(false);
+          try {
+            const remoteEstimates = await getAllEstimatesRemote(userId);
+            setJobs(remoteEstimates.map((r) => toRow(r, true)));
+            setShowingStaticSamples(false);
+          } catch (e) {
+            // A real read failure is not the same thing as "you have zero
+            // estimates" — show it instead of silently rendering the
+            // empty state, which would look exactly like data vanishing.
+            setLoadError(`Could not load your estimates. ${e.message || 'Unknown error.'}`);
+          }
           setLoading(false);
           return;
         }
@@ -127,8 +135,13 @@ export default function DashboardPage() {
   // Remote equivalent of refreshLocalData — re-reads from Supabase.
   async function refreshRemoteData() {
     if (!contractorId) return;
-    const remoteEstimates = await getAllEstimatesRemote(contractorId);
-    setJobs(remoteEstimates.map((r) => toRow(r, true)));
+    try {
+      const remoteEstimates = await getAllEstimatesRemote(contractorId);
+      setJobs(remoteEstimates.map((r) => toRow(r, true)));
+      setLoadError('');
+    } catch (e) {
+      setLoadError(`Could not refresh your estimates. ${e.message || 'Unknown error.'}`);
+    }
   }
 
   function flashMessage(text) {
@@ -137,40 +150,53 @@ export default function DashboardPage() {
   }
 
   async function handleMarkApproved(id) {
-    if (dataSource === 'remote') {
-      await markEstimateApprovedRemote(id);
-      await refreshRemoteData();
-    } else {
-      markEstimateApproved(id);
-      refreshLocalData();
+    try {
+      if (dataSource === 'remote') {
+        await markEstimateApprovedRemote(id);
+        await refreshRemoteData();
+      } else {
+        markEstimateApproved(id);
+        refreshLocalData();
+      }
+      flashMessage('Marked approved.');
+    } catch (e) {
+      flashMessage(`Could not mark approved. ${e.message || 'Unknown error.'}`);
     }
-    flashMessage('Marked approved.');
   }
 
   async function handleDuplicate(id) {
-    let duplicate;
-    if (dataSource === 'remote') {
-      duplicate = await duplicateEstimateRemote(id, contractorId);
-      await refreshRemoteData();
-    } else {
-      duplicate = duplicateEstimate(id);
-      refreshLocalData();
+    try {
+      let duplicate;
+      if (dataSource === 'remote') {
+        duplicate = await duplicateEstimateRemote(id, contractorId);
+        await refreshRemoteData();
+      } else {
+        duplicate = duplicateEstimate(id);
+        refreshLocalData();
+      }
+      flashMessage(
+        duplicate ? 'Estimate duplicated — find the copy in Drafts.' : 'Could not duplicate this estimate.'
+      );
+    } catch (e) {
+      flashMessage(`Could not duplicate. ${e.message || 'Unknown error.'}`);
     }
-    flashMessage(
-      duplicate ? 'Estimate duplicated — find the copy in Drafts.' : 'Could not duplicate this estimate.'
-    );
   }
 
   async function handleConfirmDelete(id) {
-    if (dataSource === 'remote') {
-      await deleteEstimateRemote(id);
-      await refreshRemoteData();
-    } else {
-      deleteEstimate(id);
-      refreshLocalData();
+    try {
+      if (dataSource === 'remote') {
+        await deleteEstimateRemote(id);
+        await refreshRemoteData();
+      } else {
+        deleteEstimate(id);
+        refreshLocalData();
+      }
+      setConfirmingDeleteId(null);
+      flashMessage('Estimate deleted.');
+    } catch (e) {
+      setConfirmingDeleteId(null);
+      flashMessage(`Could not delete. ${e.message || 'Unknown error.'}`);
     }
-    setConfirmingDeleteId(null);
-    flashMessage('Estimate deleted.');
   }
 
   function handleLoadDemoEstimates() {
@@ -322,6 +348,12 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {loadError && (
+        <p className="mb-4 text-sm font-semibold text-orange bg-orange/10 rounded-card px-4 py-3">
+          {loadError}
+        </p>
       )}
 
       {!loading && jobs.length > SOLO_HISTORY_LIMIT && !hasFeature(plan, 'history') && (

@@ -164,6 +164,33 @@ This is a fully-clickable demo, not a production-deployed SaaS. Specifically:
 
 ## Status (this build)
 
+**Authenticated estimate save/review: real bug fix.** `persist()` in
+`components/EstimateForm.jsx` called `saveEstimateRemote()` with no
+try/catch — when it threw (a real Supabase error, a missing contractor
+row, a network failure), the rejection propagated uncaught out of the
+click handler entirely: no error, no navigation, nothing visible at all.
+This is what "Save Draft / Review Estimate do nothing" actually was.
+Fixed by wrapping the call in try/catch and showing
+`"Could not save estimate. {real message}"` above the buttons. Two
+related gaps fixed in the same pass: `saveEstimateRemote()`'s own
+read-back-after-write could return `null` even after a genuinely
+successful save, which would have crashed the caller on `saved.id`
+(`lib/supabaseEstimates.js` now falls back to constructing the same shape
+from data already in hand rather than risking a null return); and
+`estimate_line_items`/`estimate_photos` insert errors were never checked
+at all, so a partial failure there could leave an estimate row with no
+line items and no error to explain why. Added `ensureContractorRow()` as
+the explicit fallback-protection requirement: if a real session's
+`contractors` row is missing (normally created automatically by
+`handle_new_user()` on signup — see `supabase/schema.sql` — this covers
+accounts that predate that trigger), it's provisioned automatically; if
+that also fails, the estimate falls back to `localStorage` with "Saved
+locally because account setup is incomplete." instead of being lost. The
+same silent-failure pattern existed in the Review page's "Send to
+Customer" and three of the Dashboard's row actions (Mark Approved,
+Duplicate, Delete) — all now show their real error via the existing
+message mechanisms on each page instead of failing without a trace.
+
 **Naming note**: this update was requested as "Phase 8–11," but those numbers
 were already used earlier for Real PDF Rendering, Production Readiness, and
 the Supabase SQL Setup Files. To avoid confusion, this update is referred to

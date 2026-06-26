@@ -32,6 +32,7 @@ export default function EstimateReviewPage({ params }) {
   const [downloadNotice, setDownloadNotice] = useState('');
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [limitNotice, setLimitNotice] = useState(null);
+  const [sendError, setSendError] = useState('');
 
   // 'local' = demo mode. 'remote' = a real Supabase session exists.
   const [dataSource, setDataSource] = useState('local');
@@ -117,13 +118,19 @@ export default function EstimateReviewPage({ params }) {
 
   async function sendToCustomer() {
     setSending(true);
-    const updated =
-      dataSource === 'remote'
-        ? await markEstimateSentRemote(estimate.id)
-        : markEstimateSent(estimate.id);
-    if (updated) setEstimate(updated);
-    setSending(false);
-    setSentLink(`/quote/${estimate.id}`);
+    setSendError('');
+    try {
+      const updated =
+        dataSource === 'remote'
+          ? await markEstimateSentRemote(estimate.id)
+          : markEstimateSent(estimate.id);
+      if (updated) setEstimate(updated);
+      setSentLink(`/quote/${estimate.id}`);
+    } catch (e) {
+      setSendError(`Could not send estimate. ${e.message || 'Unknown error.'}`);
+    } finally {
+      setSending(false);
+    }
   }
 
   async function handleDownload() {
@@ -305,6 +312,7 @@ export default function EstimateReviewPage({ params }) {
         )}
         {downloadNotice && <p className="text-center text-sm text-ink/60">{downloadNotice}</p>}
         {downloadError && <p className="text-center text-sm text-orange-dark">{downloadError}</p>}
+        {sendError && <p className="text-center text-sm font-semibold text-orange-dark">{sendError}</p>}
       </section>
 
       <ShareEstimateModal

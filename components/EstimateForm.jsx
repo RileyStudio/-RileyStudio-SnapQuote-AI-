@@ -54,6 +54,7 @@ export default function EstimateForm({ estimateId }) {
   // 'remote' = a real Supabase session exists (lib/supabaseEstimates.js).
   const [dataSource, setDataSource] = useState('local');
   const [contractorId, setContractorId] = useState(null);
+  const [contractorEmail, setContractorEmail] = useState(null);
 
   const [customer, setCustomer] = useState({ name: '', phone: '', email: '', address: '' });
   const [job, setJob] = useState({ title: '', description: '', start_date: '', end_date: '' });
@@ -71,6 +72,8 @@ export default function EstimateForm({ estimateId }) {
   const [drafting, setDrafting] = useState(false);
   const [aiStatus, setAiStatus] = useState(null); // { type: 'error' | 'success', message }
   const [limitNotice, setLimitNotice] = useState(null); // { label, max } | null — demo limits only
+  const [saveError, setSaveError] = useState('');
+  const [localFallbackNotice, setLocalFallbackNotice] = useState('');
 
   // Load an existing record when editing, or prefill Notes/Terms defaults
   // for a brand-new one. Checks for a real Supabase session first (Phase
@@ -82,14 +85,17 @@ export default function EstimateForm({ estimateId }) {
 
     async function load() {
       let activeContractorId = null;
+      let activeContractorEmail = null;
       if (supabase) {
         const { data: sessionData } = await supabase.auth.getSession();
         activeContractorId = sessionData?.session?.user?.id || null;
+        activeContractorEmail = sessionData?.session?.user?.email || null;
       }
 
       if (activeContractorId) {
         setDataSource('remote');
         setContractorId(activeContractorId);
+        setContractorEmail(activeContractorEmail);
 
         if (isEditing) {
           const existing = await getEstimateByIdRemote(estimateId);
@@ -190,6 +196,8 @@ export default function EstimateForm({ estimateId }) {
       }
     }
     setLimitNotice(null);
+    setSaveError('');
+    setLocalFallbackNotice('');
 
     const resolvedId = recordId || createEstimateId();
     let photosToUse = photos;
@@ -216,8 +224,29 @@ export default function EstimateForm({ estimateId }) {
     }
 
     const built = buildEstimate(resolvedId, photosToUse);
-    const saved =
-      dataSource === 'remote' ? await saveEstimateRemote(built, contractorId) : saveEstimate(built);
+
+    // This is the actual fix for "Save Draft / Review Estimate do
+    // nothing": saveEstimateRemote can throw (a real Supabase error, a
+    // missing contractor row, a network failure), and an uncaught
+    // rejection here previously meant the click handler just died
+    // silently — no error, no navigation, nothing visible at all.
+    let saved;
+    try {
+      saved =
+        dataSource === 'remote' ? await saveEstimateRemote(built, contractorId, contractorEmail) : saveEstimate(built);
+    } catch (e) {
+      if (dataSource === 'remote' && e.code === 'CONTRACTOR_MISSING') {
+        // The remote save couldn't be provisioned automatically — rather
+        // than lose the contractor's work, fall back to local storage for
+        // the rest of this session and say so plainly.
+        saved = saveEstimate(built);
+        setDataSource('local');
+        setLocalFallbackNotice('Saved locally because account setup is incomplete.');
+      } else {
+        setSaveError(`Could not save estimate. ${e.message || 'Unknown error.'}`);
+        return null;
+      }
+    }
 
     if (!recordId) {
       setRecordId(saved.id);
@@ -231,7 +260,7 @@ export default function EstimateForm({ estimateId }) {
 
   async function saveDraft() {
     const saved = await persist();
-    if (!saved) return; // blocked by a demo limit — the notice is already showing
+    if (!saved) return; // blocked by a demo limit, or a save error — the message is already showing
     setSavedMessage('Draft saved.');
     setTimeout(() => setSavedMessage(''), 2500);
   }
@@ -595,6 +624,16 @@ export default function EstimateForm({ estimateId }) {
             </div>
 
             <div className="hidden lg:block pt-2 space-y-2">
+              {saveError && (
+                <p className="text-center text-sm font-semibold text-orange bg-orange/10 rounded-card px-3 py-2">
+                  {saveError}
+                </p>
+              )}
+              {localFallbackNotice && (
+                <p className="text-center text-sm font-semibold text-paper/90 bg-white/10 rounded-card px-3 py-2">
+                  {localFallbackNotice}
+                </p>
+              )}
               <BigButton variant="ghost" className="!text-paper !border-paper/30" onClick={saveDraft}>
                 Save Draft
               </BigButton>
@@ -608,6 +647,20 @@ export default function EstimateForm({ estimateId }) {
       </div>
 
       {/* Mobile sticky action bar */}
+      {(saveError || localFallbackNotice) && (
+        <div className="lg:hidden fixed bottom-20 left-0 right-0 px-5 z-40">
+          {saveError && (
+            <p className="text-center text-sm font-semibold text-orange bg-white border border-orange/30 rounded-card px-3 py-2 shadow-card">
+              {saveError}
+            </p>
+          )}
+          {localFallbackNotice && (
+            <p className="text-center text-sm font-semibold text-ink bg-white border border-line rounded-card px-3 py-2 shadow-card mt-2">
+              {localFallbackNotice}
+            </p>
+          )}
+        </div>
+      )}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-line px-5 py-3 flex gap-3 items-center z-40">
         <div className="flex-1">
           <p className="text-xs text-ink/50">Total</p>
