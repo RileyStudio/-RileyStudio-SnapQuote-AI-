@@ -43,6 +43,13 @@ function toRow(estimate, contractorId, customerId) {
 function fromRow(row, lineItems = [], photos = []) {
   return {
     id: row.id,
+    // The customer-facing /quote/{...} URL must use THIS, never `id` —
+    // they are two separate, independently-generated columns
+    // (supabase/schema.sql). Using `id` here was the root cause of
+    // Dashboard/Review links opening the wrong (demo fallback) quote:
+    // get_quote_by_token() filters by public_quote_token specifically,
+    // so passing the primary key never matches a real row.
+    publicQuoteToken: row.public_quote_token,
     ticket_number: row.ticket_number,
     status: row.status,
     customer: {
@@ -105,7 +112,8 @@ export async function getAllEstimatesRemote(contractorId) {
     .eq('contractor_id', contractorId)
     .order('updated_at', { ascending: false });
 
-  if (error || !data) return [];
+  if (error) throw new Error(error.message);
+  if (!data) return [];
   return data.map((row) => fromRow(row, row.estimate_line_items, row.estimate_photos));
 }
 
@@ -161,7 +169,49 @@ async function upsertCustomer(contractorId, customer) {
   return created?.id || null;
 }
 
-export async function saveEstimateRemote(estimate, contractorId) {
+// Provisions a contractors row for an authenticated user who doesn't
+// have one yet. Normally schema.sql's handle_new_user() trigger creates
+// this automatically on signup — this exists purely as a safety net for
+// accounts that predate that trigger, or where it didn't fire for any
+// other reason, so a real logged-in user is never permanently blocked
+// from saving an estimate just because their contractor row is missing.
+// Returns true if a contractors row exists (already did, or was just
+// created); false if it's missing AND couldn't be created.
+async function ensureContractorRow(contractorId, email) {
+  const { data: existing, error: checkError } = await supabase
+    .from('contractors')
+    .select('id')
+    .eq('id', contractorId)
+    .maybeSingle();
+
+  if (existing) return true;
+  if (checkError) return false; // couldn't even check — don't claim success
+
+  const { error: insertError } = await supabase
+    .from('contractors')
+    .insert({ id: contractorId, business_name: 'Your Business', email: email || null });
+
+  if (insertError) return false;
+
+  // Best-effort companions — there's no foreign key from estimates to
+  // either of these, so a failure here doesn't block saving an estimate;
+  // it just means Settings might need its own one-time fix-up later.
+  await supabase.from('profiles').upsert({ id: contractorId, email: email || null });
+  await supabase.from('contractor_settings').upsert({ contractor_id: contractorId });
+
+  return true;
+}
+
+export async function saveEstimateRemote(estimate, contractorId, contractorEmail) {
+  const provisioned = await ensureContractorRow(contractorId, contractorEmail);
+  if (!provisioned) {
+    const err = new Error(
+      'Your account setup is incomplete (no contractor profile found), and one could not be created automatically.'
+    );
+    err.code = 'CONTRACTOR_MISSING';
+    throw err;
+  }
+
   const customerId = await upsertCustomer(contractorId, estimate.customer);
   const row = toRow(estimate, contractorId, customerId);
 
@@ -188,7 +238,8 @@ export async function saveEstimateRemote(estimate, contractorId) {
     sort_order: index,
   }));
   if (lineItemRows.length > 0) {
-    await supabase.from('estimate_line_items').insert(lineItemRows);
+    const { error: lineItemError } = await supabase.from('estimate_line_items').insert(lineItemRows);
+    if (lineItemError) throw new Error(lineItemError.message);
   }
 
   // Same replace pattern for photos. Expects each photo to already have a
@@ -207,25 +258,37 @@ export async function saveEstimateRemote(estimate, contractorId) {
       sort_order: index,
     }));
   if (photoRows.length > 0) {
-    await supabase.from('estimate_photos').insert(photoRows);
+    const { error: photoError } = await supabase.from('estimate_photos').insert(photoRows);
+    if (photoError) throw new Error(photoError.message);
   }
 
-  return getEstimateByIdRemote(saved.id);
+  // Read back the full record (with its line items/photos joined) for
+  // the caller — but don't let a failure here, after a genuinely
+  // successful write, crash the caller or look like the save itself
+  // failed. Fall back to constructing the same shape from data already
+  // in hand (the row we just upserted, plus the line items/photos we
+  // just wrote) rather than returning null.
+  const reloaded = await getEstimateByIdRemote(saved.id);
+  if (reloaded) return reloaded;
+
+  return fromRow(saved, lineItemRows, photoRows);
 }
 
 export async function markEstimateSentRemote(id) {
-  await supabase
+  const { error } = await supabase
     .from('estimates')
     .update({ status: 'sent', sent_at: new Date().toISOString() })
     .eq('id', id);
+  if (error) throw new Error(error.message);
   return getEstimateByIdRemote(id);
 }
 
 export async function markEstimateApprovedRemote(id) {
-  await supabase
+  const { error } = await supabase
     .from('estimates')
     .update({ status: 'approved', approved_at: new Date().toISOString() })
     .eq('id', id);
+  if (error) throw new Error(error.message);
   return getEstimateByIdRemote(id);
 }
 

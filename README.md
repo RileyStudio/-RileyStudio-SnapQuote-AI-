@@ -164,6 +164,27 @@ This is a fully-clickable demo, not a production-deployed SaaS. Specifically:
 
 ## Status (this build)
 
+**Dashboard estimate cards opening the wrong quote: real bug fix.**
+`estimates.id` (the primary key) and `estimates.public_quote_token` (a
+separate column — `supabase/schema.sql`) are two independently-generated
+UUIDs for the same row, by design — `get_quote_by_token()` filters by the
+token, never the id. Every `/quote/{...}` link in the app
+(`app/dashboard/page.jsx`'s row click, "View Quote," Share Estimate;
+`app/estimates/[id]/review/page.jsx`'s "Send to Customer"/"View as
+Customer") was passing the primary key instead, so for any real
+Supabase-backed estimate that lookup could never match — it fell through
+to the static demo quote, which is exactly "opens a demo estimate instead
+of the actual one." `lib/supabaseEstimates.js`'s `fromRow()` now exposes
+`publicQuoteToken`, and every link-construction site uses it (falling
+back to `id` for local-storage records and the static sample rows, which
+have no separate token concept at all). Also tightened
+`app/quote/[id]/page.jsx`: it previously fell back to the static demo
+quote for *any* unmatched id, including a real one that simply failed to
+match for the reason above — now only the one explicit, designated demo
+route (`demo-quote-001`, linked from the landing page) does that; any
+other unmatched id shows a real "Quote not found" instead of silently
+substituting someone else's sample data.
+
 **Authenticated estimate save/review: real bug fix.** `persist()` in
 `components/EstimateForm.jsx` called `saveEstimateRemote()` with no
 try/catch — when it threw (a real Supabase error, a missing contractor
