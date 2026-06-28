@@ -250,7 +250,7 @@ export default function DashboardPage() {
     }
     if (job.status === 'sent') {
       return [
-        { label: 'View Quote', href: `/quote/${job.id}` },
+        { label: 'View Quote', href: `/quote/${job.quote_token}` },
         ...(hasFeature(plan, 'sharing')
           ? [{ label: 'Share Estimate', onClick: () => handleShareEstimate(job) }]
           : []),
@@ -261,7 +261,7 @@ export default function DashboardPage() {
     }
     // approved
     return [
-      { label: 'View Quote', href: `/quote/${job.id}` },
+      { label: 'View Quote', href: `/quote/${job.quote_token}` },
       ...(hasFeature(plan, 'sharing')
         ? [{ label: 'Share Estimate', onClick: () => handleShareEstimate(job) }]
         : []),
@@ -451,7 +451,7 @@ export default function DashboardPage() {
       <ShareEstimateModal
         open={Boolean(shareJob)}
         onClose={() => setShareJob(null)}
-        quoteUrl={shareJob ? `${typeof window !== 'undefined' ? window.location.origin : ''}/quote/${shareJob.id}` : ''}
+        quoteUrl={shareJob ? `${typeof window !== 'undefined' ? window.location.origin : ''}/quote/${shareJob.quote_token}` : ''}
         customerName={shareJob?.customer_name}
         customerEmail={shareJob?.customer_email}
         customerPhone={shareJob?.customer_phone}
@@ -517,6 +517,12 @@ function toRow(source, isLocal) {
   if (isLocal && source.customer) {
     return {
       id: source.id,
+      // Real fix for "Dashboard opens the wrong/demo quote": a remote
+      // record's fromRow() (lib/supabaseEstimates.js) sets
+      // publicQuoteToken; a local-storage record never has this field at
+      // all, so this naturally falls back to the record's own id, which
+      // is exactly what the local-mode Quote page lookup expects.
+      quote_token: source.publicQuoteToken || source.id,
       isLocal: true,
       address: source.customer?.address || '—',
       customer_name: source.customer?.name || 'Unnamed customer',
@@ -532,6 +538,7 @@ function toRow(source, isLocal) {
 
   return {
     id: source.id,
+    quote_token: source.id, // static sample fallback rows only — no real token concept
     isLocal: false,
     address: source.address,
     customer_name: source.customer_name,
@@ -551,9 +558,9 @@ function toRow(source, isLocal) {
 // as Phase 6).
 function primaryLinkFor(job) {
   if (job.isLocal) {
-    return job.status === 'draft' ? `/estimates/${job.id}/edit` : `/quote/${job.id}`;
+    return job.status === 'draft' ? `/estimates/${job.id}/edit` : `/quote/${job.quote_token}`;
   }
-  return job.status === 'draft' ? '/estimates/new' : `/quote/${job.id}`;
+  return job.status === 'draft' ? '/estimates/new' : `/quote/${job.quote_token}`;
 }
 
 function formatDate(value) {

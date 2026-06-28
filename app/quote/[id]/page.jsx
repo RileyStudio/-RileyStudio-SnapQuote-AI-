@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import BigButton from '@/components/BigButton';
 import ApprovalStamp from '@/components/ApprovalStamp';
 import DemoBanner from '@/components/DemoBanner';
@@ -18,6 +19,20 @@ import { getEstimatePhotoUrl } from '@/lib/supabaseStorage';
 import { tryConsumeDemoLimit } from '@/lib/demoLimits';
 import DemoLimitNotice from '@/components/DemoLimitNotice';
 
+// Standard UUID v4-ish format check — good enough to distinguish "this is
+// clearly meant to be a real estimate reference" from the small set of
+// human-readable demo aliases below, without needing to know anything
+// about Postgres's exact uuid validation rules.
+function isLikelyUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value || '');
+}
+
+// The only values that are ever allowed to fall back to the static demo
+// quote when nothing real matches. 'demo-quote-001' is what the landing
+// page's "See Sample Quote" actually links to; 'demo'/'sample' are
+// recognized aliases for the same thing.
+const DEMO_ALIASES = new Set(['demo', 'sample', 'demo-quote-001']);
+
 export default function CustomerQuotePage({ params }) {
   const { id } = params;
 
@@ -31,14 +46,23 @@ export default function CustomerQuotePage({ params }) {
   const [downloadError, setDownloadError] = useState('');
   const [downloadNotice, setDownloadNotice] = useState('');
   const [limitNotice, setLimitNotice] = useState(null);
+  const [notFound, setNotFound] = useState(false);
 
-  // Load the quote: try Supabase by public_token first, fall back to demo
-  // data for any id when Supabase isn't configured or the token doesn't
-  // match a real row. This is what keeps the demo link always working.
+  // Load the quote: try Supabase first — get_quote_by_token() now matches
+  // EITHER the estimate's id or its public_quote_token in one query (see
+  // supabase/schema.sql; this requires re-running that function in the
+  // Supabase SQL Editor, it's not something redeploying the app alone
+  // fixes). A local-storage record by that exact id is next (demo/local
+  // mode). Only a small, explicit set of demo aliases falls back to the
+  // static sample quote — anything else, including a real-looking UUID
+  // that simply didn't match anything, shows "Quote not found" instead of
+  // silently substituting demo content.
   useEffect(() => {
     let isMounted = true;
 
     async function load() {
+      const looksLikeUuid = isLikelyUuid(id);
+
       if (supabase) {
         const { data, error } = await supabase.rpc('get_quote_by_token', { p_token: id });
 
@@ -65,8 +89,18 @@ export default function CustomerQuotePage({ params }) {
           return;
         }
 
-        setQuote(applySettingsToDemoQuote(demoQuote, settings));
-        setIsDemo(true);
+        // A UUID-looking id is unambiguously meant to be a real estimate
+        // reference, even though both lookups above missed — it must
+        // never silently show someone else's demo content just because
+        // the row doesn't exist (deleted, wrong project, etc.).
+        if (!looksLikeUuid && DEMO_ALIASES.has(id)) {
+          setQuote(applySettingsToDemoQuote(demoQuote, settings));
+          setIsDemo(true);
+          setLoading(false);
+          return;
+        }
+
+        setNotFound(true);
         setLoading(false);
       }
     }
@@ -141,6 +175,22 @@ export default function CustomerQuotePage({ params }) {
     } finally {
       setDownloading(false);
     }
+  }
+
+  if (notFound) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center px-5 text-center">
+        <p className="font-display font-bold text-xl mb-2">Quote not found or no longer available.</p>
+        <p className="text-sm text-ink/60 mb-6 max-w-sm">
+          This estimate may have been deleted, or the link is incorrect.
+        </p>
+        <Link href="/dashboard">
+          <BigButton variant="primary" fullWidth={false} className="px-8">
+            Back to Dashboard
+          </BigButton>
+        </Link>
+      </main>
+    );
   }
 
   if (loading || !quote) {

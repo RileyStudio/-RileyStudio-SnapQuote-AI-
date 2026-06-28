@@ -164,6 +164,26 @@ This is a fully-clickable demo, not a production-deployed SaaS. Specifically:
 
 ## Status (this build)
 
+**Stripe checkout — wired, no webhook yet.** New: `app/plans/page.jsx`
+(real "Subscribe" buttons, reusing the existing pricing data from
+`lib/plans.js` rather than duplicating it), `app/api/create-checkout-session/route.js`,
+and `app/billing/success/page.jsx` (the landing spot Stripe redirects to
+after payment — required so `success_url` doesn't 404, not explicitly
+asked for but necessary for the feature to actually work end-to-end).
+**Deliberately calls Stripe's REST API directly via `fetch()` instead of
+the `stripe` npm package** — this adds zero new dependencies, which
+matters because this environment has no network access to run
+`npm install` and verify a new package resolves correctly; "build must
+pass" was explicit. Checkout creates a real `mode: 'subscription'`
+session against whichever `STRIPE_PRICE_*` env var matches the clicked
+plan, with the exact `success_url`/`cancel_url` specified. **Nothing here
+activates a subscription** — there's no webhook (explicitly out of scope
+for this pass), so a completed Stripe payment doesn't yet update anyone's
+`plan` in Supabase. `/plans` isn't linked from anywhere in the UI yet
+either (the landing page, Settings, etc. were intentionally left
+untouched, per "wire Stripe checkout only") — visit it directly at
+`/plans` for now.
+
 **Public quote page fallback bug — requires a manual SQL step, not just a
 redeploy.** `get_quote_by_token()` in `supabase/schema.sql` now matches
 EITHER an estimate's `id` or its `public_quote_token` in one query
@@ -723,11 +743,16 @@ SQL changes for you; this is a separate, manual step on Supabase's side.**
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Real auth, real data | App runs entirely on demo/localStorage data |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Real auth, real data | Same as above |
-| `NEXT_PUBLIC_SITE_URL` | Confirmation-link fallback only (optional) | `app/login/page.jsx`'s `signUp()` call omits `emailRedirectTo` entirely if this isn't set — doesn't block account creation either way, since it's only consequential if "Confirm email" is left on (see "Supabase Auth settings" below) |
+| `NEXT_PUBLIC_SITE_URL` | Confirmation-link fallback (optional); **required** for `/api/create-checkout-session` | `app/login/page.jsx`'s `signUp()` call omits `emailRedirectTo` entirely if this isn't set — doesn't block account creation either way. For checkout, it's required to build `success_url`/`cancel_url`; missing it is one of the three things that produces that route's `503` |
 | `OPENAI_API_KEY` | `/api/transcribe`, `/api/draft-estimate` | Both return their fixed demo response (`demo: true`) instead of erroring |
 | `OPENAI_DRAFT_MODEL` | `/api/draft-estimate` (optional) | Defaults to `gpt-4o-mini` — override if your account uses a different current model |
 | `RESEND_API_KEY` | `/api/send-email` (no longer used by the UI — see "Known Production Gaps") | Returns a demo placeholder (`demo: true`, nothing actually sent) instead of erroring |
 | `SEND_EMAIL_FROM` | `/api/send-email` (optional, same caveat) | Defaults to `estimates@snapquoteai.app` — must be a domain verified with your email provider in production |
+| `STRIPE_SECRET_KEY` | `/api/create-checkout-session` | Returns a clear `503` listing every missing var instead of erroring opaquely |
+| `STRIPE_PRICE_FOUNDER` | `/api/create-checkout-session` (Founder plan) | Same as above — `/plans`' Founder button fails with the same clear 503 |
+| `STRIPE_PRICE_SOLO` | `/api/create-checkout-session` (Solo plan) | Same, for the Solo button |
+| `STRIPE_PRICE_PRO` | `/api/create-checkout-session` (Pro plan) | Same, for the Pro button |
+| `STRIPE_PRICE_TEAM` | `/api/create-checkout-session` (Team plan) | Same, for the Team button |
 | `NEXT_PUBLIC_DEMO_MODE` | — | Cosmetic flag some pages read; the demo-vs-real behavior is actually driven by whether Supabase/OpenAI env vars are present, not this flag alone |
 
 `/api/generate-pdf` needs no environment variables — it never calls an

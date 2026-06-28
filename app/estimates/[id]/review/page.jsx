@@ -57,7 +57,7 @@ export default function EstimateReviewPage({ params }) {
         }
         setEstimate(record);
         if (record.status === 'sent' || record.status === 'approved') {
-          setSentLink(`/quote/${record.id}`);
+          setSentLink(`/quote/${record.publicQuoteToken || record.id}`);
         }
         const settings = await getSettingsRemote(activeContractorId);
         setPreviewContractor(contractorFromSettings(settings));
@@ -87,7 +87,7 @@ export default function EstimateReviewPage({ params }) {
   if (notFound) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center px-5 text-center">
-        <p className="font-display font-bold text-xl mb-2">Estimate not found</p>
+        <p className="font-display font-bold text-xl mb-2">Estimate not found.</p>
         <p className="text-sm text-ink/60 mb-6 max-w-sm">
           This estimate may have been deleted, or the link is incorrect.
         </p>
@@ -125,7 +125,7 @@ export default function EstimateReviewPage({ params }) {
           ? await markEstimateSentRemote(estimate.id)
           : markEstimateSent(estimate.id);
       if (updated) setEstimate(updated);
-      setSentLink(`/quote/${estimate.id}`);
+      setSentLink(`/quote/${updated?.publicQuoteToken || updated?.id || estimate.id}`);
     } catch (e) {
       setSendError(`Could not send estimate. ${e.message || 'Unknown error.'}`);
     } finally {
