@@ -164,6 +164,21 @@ This is a fully-clickable demo, not a production-deployed SaaS. Specifically:
 
 ## Status (this build)
 
+**Public quote page fallback bug — requires a manual SQL step, not just a
+redeploy.** `get_quote_by_token()` in `supabase/schema.sql` now matches
+EITHER an estimate's `id` or its `public_quote_token` in one query
+(previously only the token), so a link like `/quote/84b9ae77-...` (a raw
+estimate id) now correctly finds the real row instead of falling through
+to demo content. **⚠️ This is a SQL function change — re-run the updated
+`get_quote_by_token()` definition from `supabase/schema.sql` in your
+Supabase SQL Editor. Redeploying the Next.js app alone does not update
+anything in your Postgres database.** `app/quote/[id]/page.jsx` also now
+explicitly distinguishes a UUID-looking id from the small, fixed set of
+demo aliases (`demo`, `sample`, `demo-quote-001`) — only those three ever
+fall back to the static sample quote; anything else, including a real
+UUID that matches nothing (wrong project, deleted row, typo), shows
+"Quote not found or no longer available." instead.
+
 **Dashboard estimate cards opening the wrong quote: real bug fix.**
 `estimates.id` (the primary key) and `estimates.public_quote_token` (a
 separate column — `supabase/schema.sql`) are two independently-generated
@@ -660,23 +675,15 @@ Four SQL files in `supabase/` give you the entire backend foundation —
 tables, security policies, storage buckets, and optional demo data — all
 copy/paste-able, with **no manual table creation in the Table Editor UI**.
 
-**Scope note**: this phase builds the SQL foundation only. The Next.js app
-itself does not call any of this yet — every page still reads/writes
-`localStorage` in demo mode (see "Local persistence model" above). Wiring
-the app to actually use these tables is future work; see "Buyer Handoff
-Notes" → "Suggested next production steps."
-
-**Concretely**: `app/quote/[id]/page.jsx` already has a Supabase-read code
-path from an earlier phase, but it queries the *old*, now-superseded schema
-shape (a `jobs` table joined to `job_photos`, filtered by a `public_token`
-column) — none of which exist anymore after running the SQL below. That
-query will simply error and the page will gracefully fall through to demo
-data, exactly as it does today with no Supabase configured at all — it
-won't crash, but it also won't show real data yet. So: running this SQL
-and adding the env vars does **not** by itself make the app "go live" —
-it only makes the backend ready for a future phase to query the new
-tables (`estimates`, `estimate_line_items`, etc.) and the
-`get_quote_by_token()` function instead.
+**If you already have a Supabase project running this app**: `schema.sql`
+has been updated more than once since initial setup (most recently:
+`get_quote_by_token()` now matches an estimate's `id` as well as its
+`public_quote_token`). Re-running the whole file is safe — every
+`create table` uses `if not exists` and every `create or replace
+function` is, as the name says, idempotent — so just paste the current
+`schema.sql` into the SQL Editor and run it again any time this README
+says a SQL file changed. **Redeploying the Next.js app does not apply
+SQL changes for you; this is a separate, manual step on Supabase's side.**
 
 1. **Create a new Supabase project** at [supabase.com](https://supabase.com)
    (or use an existing one — these scripts are additive and safe to run on

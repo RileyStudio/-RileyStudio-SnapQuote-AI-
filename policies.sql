@@ -293,9 +293,13 @@ create trigger on_auth_user_created
 
 -- Bundles everything app/quote/[id]/page.jsx needs — the estimate, its
 -- contractor's branding AND default settings (expiration_days), line
--- items, and photos — into one call, scoped to exactly one token. Returns
--- null if the token doesn't match a sent/approved estimate (never reveals
--- whether a token is "almost right" or simply wrong).
+-- items, and photos — into one call. Accepts EITHER the estimate's
+-- public_quote_token OR its raw id: a customer-facing link should always
+-- use the token, but matching the id too means a caller that passes the
+-- wrong one (now, or in some future code path) still finds the real
+-- estimate instead of silently falling through to demo content. Returns
+-- null if neither matches a sent/approved estimate (never reveals
+-- whether a value is "almost right" or simply wrong).
 create or replace function get_quote_by_token(p_token uuid)
 returns jsonb
 language plpgsql
@@ -327,7 +331,7 @@ begin
   from estimates e
   join contractors c on c.id = e.contractor_id
   left join contractor_settings cs on cs.contractor_id = c.id
-  where e.public_quote_token = p_token
+  where (e.public_quote_token = p_token or e.id = p_token)
     and e.status in ('sent', 'approved');
 
   return v_result;
