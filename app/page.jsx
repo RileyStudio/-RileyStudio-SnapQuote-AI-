@@ -4,218 +4,246 @@ import PricingTable from '@/components/PricingTable';
 
 export default function LandingPage() {
   return (
-    <main>
-      <header className="flex items-center justify-between px-5 py-4 max-w-5xl mx-auto">
+    <main className="min-h-screen bg-[#fbfaf7] text-ink">
+      <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-10">
         <Logo />
-        <Link
-          href="/login"
-          className="tap-target inline-flex items-center justify-center rounded-card bg-orange
-            text-white font-display font-bold text-sm px-5 hover:bg-orange-dark transition-colors"
-        >
-          Log in
-        </Link>
-      </header>
-
-      {/* Hero — problem, then promise. No "AI-powered" framing up top;
-          the framing is the actual gap that loses contractors real jobs. */}
-      <section className="px-5 pt-8 pb-10 max-w-5xl mx-auto">
-        <h1 className="font-display font-extrabold text-4xl sm:text-5xl leading-[1.05] max-w-xl">
-          You lose more jobs to slow quotes than bad ones.
-        </h1>
-        <p className="mt-4 text-lg text-ink/80 max-w-md">
-          The gap between &quot;I&apos;ll send the quote&quot; and actually sending it is where
-          the next guy gets the job. SnapQuote turns your job-site photos, notes, materials,
-          and labor into a clean, branded estimate your customer can open and approve —
-          before you&apos;re back in the truck.
-        </p>
-        <p className="mt-3 text-sm font-display font-semibold text-orange-dark">
-          Founder offer: first 10 contractors lock in $10/month.
-        </p>
-        <div className="mt-6 flex flex-col sm:flex-row gap-3 max-w-md">
-          <Link
-            href="/demo"
-            className="tap-target inline-flex items-center justify-center rounded-card bg-site px-8 py-3 font-display font-bold text-paper shadow-soft"
-          >
-            Try Limited Demo
-          </Link>
-          <Link
-            href="/quote/demo-quote-001"
-            className="tap-target inline-flex items-center justify-center rounded-card border border-line bg-transparent px-8 py-3 font-display font-bold text-ink"
-          >
-            See Sample Quote
-          </Link>
-          <a
-            href="#showcase"
-            className="tap-target inline-flex items-center justify-center rounded-card border border-dashed border-line bg-transparent px-8 py-3 font-display font-bold text-ink/70"
-          >
-            Showcase
+        <nav className="flex items-center gap-3">
+          <a href="#pricing" className="hidden text-sm font-semibold text-ink/70 hover:text-ink sm:inline-flex">
+            Pricing
           </a>
-        </div>
-
-        {/* Transformation visual: phone-in-truck → branded quote */}
-        <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
-          <PhoneMock label="Photos + job notes" tone="raw" />
-          <ArrowDivider />
-          <PhoneMock label="Branded PDF quote" tone="polished" />
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section className="bg-surface text-paper px-5 py-12">
-        <div className="max-w-5xl mx-auto grid sm:grid-cols-3 gap-8">
-          <Step n="1" title="Photos" body="Snap the job site, right from your truck." />
-          <Step n="2" title="Notes" body="Talk through the scope like you would to a foreman, or just type it." />
-          <Step n="3" title="Branded quote" body="You check it, your customer approves it with one tap." />
-        </div>
-      </section>
-
-      {/* Founding Contractor offer — the centerpiece of this page. This is
-          a builder-with-contractors offer, not a discount: the deal is
-          access to the person building this and influence over what gets
-          built next, priced like an early hire, not a coupon. */}
-      <section className="px-5 py-14 bg-ink text-paper">
-        <div className="max-w-3xl mx-auto">
-          <p className="font-display font-semibold text-xs uppercase tracking-widest text-orange mb-3">
-            First 10 only
-          </p>
-          <h2 className="font-display font-extrabold text-3xl sm:text-4xl leading-tight mb-4">
-            We&apos;re building this with 10 contractors first.
-          </h2>
-          <p className="text-paper/80 max-w-xl mb-3">
-            SnapQuote is opening early access to 10 contractors who want faster estimates,
-            branded quotes, customer approval links, and a say in what gets built next.
-          </p>
-          <p className="text-paper/60 text-sm max-w-xl mb-8">
-            After the first 10 seats are filled, pricing and access will move to the standard
-            public plans.
-          </p>
-
-          <ul className="space-y-4 mb-10">
-            <FounderPoint>
-              <strong className="text-paper">$10/month, locked in for life</strong> as long as
-              you stay subscribed. Not a teaser rate. Not a 90-day discount.
-            </FounderPoint>
-            <FounderPoint>
-              <strong className="text-paper">A direct line to the builder.</strong> Tell us what
-              slows you down on real jobs, and we use that feedback to shape the product.
-            </FounderPoint>
-            <FounderPoint>
-              <strong className="text-paper">Your logo and branding on every PDF and quote
-              page</strong> your customers see. It looks like it came from your business because
-              it did.
-            </FounderPoint>
-            <FounderPoint>
-              <strong className="text-paper">Discounted access to future add-ons</strong> for as
-              long as you stay subscribed.
-            </FounderPoint>
-          </ul>
-
           <Link
             href="/login"
-            className="tap-target inline-flex items-center justify-center rounded-card bg-orange
-              px-8 py-3 font-display font-bold text-white shadow-soft"
+            className="inline-flex min-h-12 items-center justify-center rounded-[18px] bg-orange px-6 font-display font-bold text-white shadow-soft transition hover:bg-orange-dark"
           >
-            Become a Founding Contractor
+            Log in
           </Link>
-          <p className="text-paper/50 text-xs mt-3">
-            No payment collected yet. Early access pricing locks in when billing goes live.
+        </nav>
+      </header>
+
+      <section className="mx-auto grid max-w-7xl items-center gap-12 px-6 pb-16 pt-10 lg:grid-cols-[0.95fr_1.05fr] lg:px-10 lg:pb-20 lg:pt-14">
+        <div>
+          <p className="mb-5 inline-flex rounded-full border border-orange/20 bg-orange/10 px-4 py-2 font-display text-xs font-bold uppercase tracking-[0.18em] text-orange-dark">
+            Built for contractors who quote on site
           </p>
+          <h1 className="max-w-2xl font-display text-5xl font-extrabold leading-[0.98] tracking-[-0.04em] sm:text-6xl lg:text-7xl">
+            Quote the job <span className="text-orange">before</span> you leave the driveway.
+          </h1>
+          <p className="mt-7 max-w-xl text-xl leading-relaxed text-ink/72">
+            Snap photos, talk through the details, and SnapQuote turns the job into a clean estimate your customer can open, approve, and save.
+          </p>
+
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/demo"
+              className="inline-flex min-h-14 items-center justify-center rounded-[18px] bg-site px-8 font-display text-base font-bold text-paper shadow-soft transition hover:brightness-110"
+            >
+              Try Limited Demo
+            </Link>
+            <Link
+              href="/quote/demo-quote-001"
+              className="inline-flex min-h-14 items-center justify-center rounded-[18px] border border-line bg-white px-8 font-display text-base font-bold text-ink shadow-sm transition hover:border-ink/30"
+            >
+              See Sample Quote
+            </Link>
+            <a
+              href="#showcase"
+              className="inline-flex min-h-14 items-center justify-center rounded-[18px] border border-line bg-white px-8 font-display text-base font-bold text-ink shadow-sm transition hover:border-ink/30"
+            >
+              Showcase
+            </a>
+          </div>
+
+          <div className="mt-9 grid gap-4 text-sm font-medium text-ink/70 sm:grid-cols-3">
+            <FeaturePill icon="⚡" text="Instant drafts" />
+            <FeaturePill icon="◈" text="Branded quotes" />
+            <FeaturePill icon="✓" text="One tap approval" />
+          </div>
+        </div>
+
+        <div className="relative min-h-[620px] lg:min-h-[700px]">
+          <div className="absolute left-[2%] top-4 w-[48%] max-w-[330px] rotate-[-1deg] lg:left-[6%] lg:top-0">
+            <PhoneFrame label="Estimate builder" image="/screens/estimate-form.png" mode="cover" />
+          </div>
+          <div className="absolute right-[0%] top-16 w-[46%] max-w-[320px] rotate-[1deg] lg:right-[5%] lg:top-20">
+            <PhoneFrame label="Customer quote" image="/screens/sample-pdf.png" mode="contain" />
+          </div>
+          <div className="absolute bottom-8 left-1/2 hidden w-[76%] -translate-x-1/2 rounded-[28px] border border-line bg-white/85 p-5 shadow-card backdrop-blur sm:block">
+            <p className="font-display text-sm font-bold text-ink">The whole flow in one place</p>
+            <p className="mt-1 text-sm leading-relaxed text-ink/65">
+              Estimate, customer approval, branded PDF, and saved history are all part of the same job ticket.
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* Pricing comparison — the actual numbers, for anyone comparing
-          rather than just reading the pitch above. */}
-      <section id="pricing" className="px-5 py-14 max-w-5xl mx-auto">
-        <h2 className="font-display font-bold text-2xl mb-2">Pricing</h2>
-        <p className="text-ink/60 max-w-2xl mb-8">
-          Founder gives early contractors Pro-level value for $10/month while the product is
-          being shaped with real feedback.
-        </p>
+      <section className="border-y border-line bg-white px-6 py-12 lg:px-10">
+        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-3">
+          <HowStep
+            number="1"
+            title="Snap and talk"
+            image="/screens/estimate-form.png"
+            body="Capture the job site and talk through what needs to be done. SnapQuote turns that into structured job notes."
+          />
+          <HowStep
+            number="2"
+            title="Build the estimate"
+            image="/screens/estimate-form.png"
+            body="Review materials, labor, tax, terms, photos, and customer details before anything is shared."
+          />
+          <HowStep
+            number="3"
+            title="Customer approves"
+            image="/screens/sample-pdf.png"
+            body="Send a clean quote link. Your customer reviews the work and approves when they are ready."
+          />
+        </div>
+      </section>
+
+      <section className="bg-ink px-6 py-16 text-paper lg:px-10">
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+          <div>
+            <p className="mb-4 font-display text-xs font-bold uppercase tracking-[0.2em] text-orange">
+              First 10 only
+            </p>
+            <h2 className="font-display text-4xl font-extrabold leading-tight tracking-[-0.03em] sm:text-5xl">
+              Founding Contractor Program
+            </h2>
+            <p className="mt-5 max-w-xl text-lg leading-relaxed text-paper/75">
+              We are inviting 10 contractors to shape SnapQuote before public launch. Your feedback helps decide what gets built next. In return, you lock in the lowest subscription price we plan to offer.
+            </p>
+          </div>
+
+          <div className="rounded-[30px] border border-paper/10 bg-paper/[0.04] p-6 shadow-card sm:p-8">
+            <div className="mb-6 flex items-end justify-between gap-4">
+              <div>
+                <p className="font-display text-sm font-bold uppercase tracking-[0.14em] text-paper/55">Founder price</p>
+                <p className="mt-2 font-display text-5xl font-extrabold text-white">$10<span className="text-lg text-paper/60">/mo</span></p>
+              </div>
+              <span className="rounded-full bg-orange px-4 py-2 font-display text-xs font-bold text-white">10 seats</span>
+            </div>
+            <ul className="space-y-4 text-paper/80">
+              <FounderPoint>Locked pricing while your subscription stays active.</FounderPoint>
+              <FounderPoint>Branding on quote pages and PDF exports.</FounderPoint>
+              <FounderPoint>Direct feedback line while the product is still being shaped.</FounderPoint>
+              <FounderPoint>Discounted access to future add-ons.</FounderPoint>
+            </ul>
+            <Link
+              href="/login"
+              className="mt-8 inline-flex min-h-14 w-full items-center justify-center rounded-[18px] bg-orange px-8 font-display text-base font-bold text-white shadow-soft transition hover:bg-orange-dark"
+            >
+              Become a Founding Contractor
+            </Link>
+            <p className="mt-3 text-center text-xs text-paper/45">
+              No payment collected yet. Billing can be connected when the Founder seats are ready.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing" className="mx-auto max-w-7xl px-6 py-16 lg:px-10">
+        <div className="mb-8 max-w-2xl">
+          <p className="font-display text-sm font-bold uppercase tracking-[0.16em] text-orange">Pricing</p>
+          <h2 className="mt-3 font-display text-4xl font-extrabold tracking-[-0.03em]">Founder gets the early advantage.</h2>
+          <p className="mt-4 text-lg leading-relaxed text-ink/65">
+            Standard pricing is shown clearly so contractors can see why the first 10 seats matter.
+          </p>
+        </div>
         <PricingTable highlightPlan="founder" />
       </section>
 
-      {/* Showcase — placeholder section, same page, no new route yet */}
-      <section id="showcase" className="px-5 py-14 max-w-5xl mx-auto">
-        <h2 className="font-display font-bold text-2xl mb-2">Showcase</h2>
-        <p className="text-ink/60 max-w-xl mb-8">
-          Real contractors, real estimates — coming soon as the first 10 come on board.
-        </p>
-        <div className="grid sm:grid-cols-3 gap-4">
-          <ShowcasePlaceholder />
-          <ShowcasePlaceholder />
-          <ShowcasePlaceholder />
+      <section id="showcase" className="bg-white px-6 py-16 lg:px-10">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-8 max-w-2xl">
+            <p className="font-display text-sm font-bold uppercase tracking-[0.16em] text-orange">Showcase</p>
+            <h2 className="mt-3 font-display text-4xl font-extrabold tracking-[-0.03em]">Real screens beat fake promises.</h2>
+            <p className="mt-4 text-lg leading-relaxed text-ink/65">
+              SnapQuote is built around the screens contractors use every day: estimate, quote, approval, and PDF.
+            </p>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ShowcaseCard title="Estimate builder" image="/screens/estimate-form.png" />
+            <ShowcaseCard title="Branded PDF output" image="/screens/sample-pdf.png" />
+          </div>
         </div>
       </section>
 
-      <footer className="px-5 py-8 text-center text-sm text-ink/60 border-t border-line">
-        No big team. No corporate roadmap. Just the next fix you actually need, shipped by the
-        person who built this.
+      <footer className="border-t border-line px-6 py-8 text-center text-sm text-ink/55">
+        Built for faster quotes, cleaner approvals, and less chasing after the job is already done.
       </footer>
     </main>
   );
 }
 
-function Step({ n, title, body }) {
+function FeaturePill({ icon, text }) {
   return (
-    <div>
-      <div className="font-display font-extrabold text-orange text-3xl mb-1">{n}</div>
-      <h3 className="font-display font-semibold text-xl mb-1">{title}</h3>
-      <p className="text-paper/75 text-sm">{body}</p>
+    <div className="flex items-center gap-3">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-white text-lg shadow-sm">{icon}</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function PhoneFrame({ image, label, mode = 'cover' }) {
+  return (
+    <figure>
+      <div className="relative rounded-[42px] border-[10px] border-[#121519] bg-[#121519] shadow-[0_30px_80px_rgba(0,0,0,0.24)]">
+        <div className="absolute left-1/2 top-2 z-10 h-7 w-24 -translate-x-1/2 rounded-full bg-black" />
+        <div className="overflow-hidden rounded-[30px] bg-white">
+          <img
+            src={image}
+            alt={label}
+            className={`h-[590px] w-full ${mode === 'contain' ? 'object-contain' : 'object-cover'} object-top`}
+          />
+        </div>
+      </div>
+      <figcaption className="mt-3 text-center font-display text-sm font-semibold text-ink/60">{label}</figcaption>
+    </figure>
+  );
+}
+
+function HowStep({ number, title, body, image }) {
+  return (
+    <article className="grid gap-5 sm:grid-cols-[110px_1fr] lg:grid-cols-[130px_1fr]">
+      <div className="mx-auto w-28 sm:mx-0">
+        <MiniPhone image={image} />
+      </div>
+      <div>
+        <div className="font-display text-5xl font-extrabold text-orange">{number}</div>
+        <h3 className="mt-2 font-display text-2xl font-extrabold tracking-[-0.02em]">{title}</h3>
+        <p className="mt-3 text-base leading-relaxed text-ink/65">{body}</p>
+      </div>
+    </article>
+  );
+}
+
+function MiniPhone({ image }) {
+  return (
+    <div className="rounded-[24px] border-[6px] border-[#121519] bg-[#121519] shadow-card">
+      <div className="overflow-hidden rounded-[17px] bg-white">
+        <img src={image} alt="SnapQuote screen" className="h-44 w-full object-cover object-top" />
+      </div>
     </div>
   );
 }
 
 function FounderPoint({ children }) {
   return (
-    <li className="flex gap-3 text-paper/85 leading-relaxed">
-      <span className="text-orange font-bold shrink-0">—</span>
+    <li className="flex gap-3 leading-relaxed">
+      <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange text-xs font-bold text-white">✓</span>
       <span>{children}</span>
     </li>
   );
 }
 
-function ShowcasePlaceholder() {
+function ShowcaseCard({ title, image }) {
   return (
-    <div className="rounded-card border-2 border-dashed border-line p-6 text-center text-ink/40">
-      <p className="font-display font-semibold text-sm">Coming soon</p>
-      <p className="text-xs mt-1">A Founding Contractor&apos;s estimate could be here.</p>
-    </div>
-  );
-}
-
-function PhoneMock({ label, tone }) {
-  const isRaw = tone === 'raw';
-  return (
-    <div className="flex flex-col items-center">
-      <div
-        className={`w-32 h-56 rounded-2xl border-2 ${
-          isRaw ? 'border-line bg-white' : 'border-ink bg-ink'
-        } shadow-card flex flex-col items-center justify-center p-3 gap-2`}
-      >
-        {isRaw ? (
-          <>
-            <div className="w-full h-14 bg-line rounded" />
-            <div className="w-full h-3 bg-line/70 rounded" />
-            <div className="w-10 h-10 rounded-full bg-orange/70" />
-          </>
-        ) : (
-          <>
-            <div className="w-full h-3 bg-orange rounded" />
-            <div className="w-full h-3 bg-paper/80 rounded" />
-            <div className="w-full h-3 bg-paper/80 rounded" />
-            <div className="w-full h-8 bg-paper/30 rounded mt-2" />
-          </>
-        )}
+    <article className="overflow-hidden rounded-[30px] border border-line bg-[#fbfaf7] shadow-card">
+      <div className="border-b border-line px-6 py-4">
+        <h3 className="font-display text-xl font-bold">{title}</h3>
       </div>
-      <span className="mt-2 text-sm font-display font-semibold text-ink/70">{label}</span>
-    </div>
-  );
-}
-
-function ArrowDivider() {
-  return (
-    <div className="flex sm:flex-col items-center justify-center text-orange text-3xl font-display">
-      →
-    </div>
+      <div className="max-h-[520px] overflow-hidden bg-white">
+        <img src={image} alt={title} className="w-full object-cover object-top" />
+      </div>
+    </article>
   );
 }
