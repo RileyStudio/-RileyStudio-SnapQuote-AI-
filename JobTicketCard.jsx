@@ -12,7 +12,7 @@ export default function DemoLimitNotice({ label, max }) {
         Become a Founding Contractor to keep going — no limits, your own branding, real history.
       </p>
       <Link
-        href="/#pricing"
+        href="/plans"
         className="inline-flex items-center justify-center rounded-card bg-orange text-white
           font-display font-semibold text-sm px-5 py-2.5 hover:bg-orange-dark transition-colors"
       >

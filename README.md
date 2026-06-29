@@ -164,25 +164,77 @@ This is a fully-clickable demo, not a production-deployed SaaS. Specifically:
 
 ## Status (this build)
 
-**Stripe checkout — wired, no webhook yet.** New: `app/plans/page.jsx`
-(real "Subscribe" buttons, reusing the existing pricing data from
-`lib/plans.js` rather than duplicating it), `app/api/create-checkout-session/route.js`,
-and `app/billing/success/page.jsx` (the landing spot Stripe redirects to
-after payment — required so `success_url` doesn't 404, not explicitly
-asked for but necessary for the feature to actually work end-to-end).
-**Deliberately calls Stripe's REST API directly via `fetch()` instead of
-the `stripe` npm package** — this adds zero new dependencies, which
-matters because this environment has no network access to run
-`npm install` and verify a new package resolves correctly; "build must
-pass" was explicit. Checkout creates a real `mode: 'subscription'`
-session against whichever `STRIPE_PRICE_*` env var matches the clicked
-plan, with the exact `success_url`/`cancel_url` specified. **Nothing here
-activates a subscription** — there's no webhook (explicitly out of scope
-for this pass), so a completed Stripe payment doesn't yet update anyone's
-`plan` in Supabase. `/plans` isn't linked from anywhere in the UI yet
-either (the landing page, Settings, etc. were intentionally left
-untouched, per "wire Stripe checkout only") — visit it directly at
-`/plans` for now.
+**Two real bugs found and fixed this pass — one cosmetic, one serious.**
+
+The cosmetic one: Dashboard's "Demo Mode" badge (`bg-site/10 text-site` —
+the "neon blue" described in the report) was driven purely by the
+`snapquote.demoSession` localStorage flag, with no check against whether
+a real Supabase session now exists. A browser that tried "Launch limited
+demo" and *later* logged into a real account in the same session would
+keep showing the badge. Fixed two ways: the flag is now cleared on every
+real login/signup success path (`app/login/page.jsx`,
+`app/auth/callback/page.jsx`), and Dashboard's own check now also
+requires `dataSource !== 'remote'` independently, so a real authenticated
+session can never show it regardless of why the flag might be stale.
+
+**The serious one**: Settings' Plan section, for a real authenticated
+account, let clicking any plan card instantly write that plan to
+Supabase for free — completely bypassing the entire Stripe integration
+from the previous pass. This wasn't something the task asked about
+directly; it surfaced while implementing "strict plan routing" and is a
+real billing-bypass vulnerability that needed fixing regardless. Fixed:
+a real account's plan cards now link to `/plans` for actual Stripe
+checkout; `handlePlanChange` no longer has any code path that writes a
+plan to a real account at all — only local/demo mode keeps the original
+free, instant switch (deliberately, so the gates can be tried without
+paying). New `lib/routeAccess.js` (`canAccessRoute(plan, route)`) encodes
+the access matrix from the spec; `lib/plans.js` got the updated copy, the
+Solo "limited history" wording, and a documented-but-not-implemented
+Founder upgrade-step policy structure (`founderUpgradePolicy()`,
+`FOUNDER_UPGRADE_STEP_USD`). A new Teams-only "Team Assignment"
+placeholder was added to `EstimateForm.jsx`.
+
+**Stripe subscriptions — full integration, including the webhook this
+time.** Builds on the previous checkout-only pass:
+`app/api/create-checkout-session/route.js` now **requires** a real,
+server-verified Supabase session (`supabase.auth.getUser(token)` against
+the bearer token the client sends — not just a client-side check) and
+attaches `user_id`/`plan`/`email` as metadata on both the Checkout Session
+and the resulting Subscription, so later webhook events can resolve the
+right contractor regardless of delivery order. New
+`app/api/stripe-webhook/route.js` handles `checkout.session.completed`,
+`customer.subscription.updated`, `customer.subscription.deleted`, and
+`invoice.payment_failed`, with **Stripe's signature verification
+implemented by hand** (HMAC-SHA256 over `{timestamp}.{rawBody}`, constant-time
+comparison, 5-minute replay tolerance) rather than via the `stripe` npm
+package — same zero-new-dependency reasoning as the checkout route.
+New `lib/founderSeats.js` + a `count_active_founder_subscribers()` SQL
+function cap Founder at 10 active subscribers, checked both in the UI
+(`/plans`, disables the button and shows "Sold out") and server-side in
+the checkout route itself (bypassing the UI doesn't bypass the limit).
+New `app/billing/page.jsx` + `app/api/create-billing-portal-session/route.js`
+open a real Stripe Customer Portal session. New
+`supabase/schema.sql` columns: `stripe_customer_id`, `stripe_subscription_id`,
+`subscription_status` (all additive via `alter table add column if not
+exists` — see "Database migration" below).
+
+**A genuine security finding that changed the design**: the task's
+straightforward framing (webhook writes plan/subscription data to a
+contractor row) cannot be done safely with only the existing anon-key
+client. Any function with that write power, if ever exposed through a
+public RPC the way this app's other functions are, would let anyone grant
+themselves a paid plan for free by just calling it with their own id. The
+webhook route uses a Supabase **service-role key** directly instead — added
+as `SUPABASE_SERVICE_ROLE_KEY`, beyond what was originally specified,
+server-only, never client-facing, used in exactly one file. The Founder
+seat *count* is the opposite case — a public, read-only aggregate with no
+row-level data or write capability at all — so that one stayed a public
+RPC function, safe to call from a logged-out visitor's browser on `/plans`.
+
+`/plans` still isn't linked from the landing page or Settings (both
+intentionally left untouched, per "do not touch ... except where
+pricing/buttons need Stripe") — visit it directly at `/plans`, or
+`/billing` for the customer portal.
 
 **Public quote page fallback bug — requires a manual SQL step, not just a
 redeploy.** `get_quote_by_token()` in `supabase/schema.sql` now matches
@@ -748,11 +800,13 @@ SQL changes for you; this is a separate, manual step on Supabase's side.**
 | `OPENAI_DRAFT_MODEL` | `/api/draft-estimate` (optional) | Defaults to `gpt-4o-mini` — override if your account uses a different current model |
 | `RESEND_API_KEY` | `/api/send-email` (no longer used by the UI — see "Known Production Gaps") | Returns a demo placeholder (`demo: true`, nothing actually sent) instead of erroring |
 | `SEND_EMAIL_FROM` | `/api/send-email` (optional, same caveat) | Defaults to `estimates@snapquoteai.app` — must be a domain verified with your email provider in production |
-| `STRIPE_SECRET_KEY` | `/api/create-checkout-session` | Returns a clear `503` listing every missing var instead of erroring opaquely |
-| `STRIPE_PRICE_FOUNDER` | `/api/create-checkout-session` (Founder plan) | Same as above — `/plans`' Founder button fails with the same clear 503 |
+| `STRIPE_SECRET_KEY` | `/api/create-checkout-session`, `/api/create-billing-portal-session`, `/api/checkout-session-status` | Each returns a clear `503`/`error` instead of erroring opaquely |
+| `STRIPE_WEBHOOK_SECRET` | `/api/stripe-webhook` | Every webhook request is rejected with `500` — this route fails closed, never processing an event it can't verify |
+| `STRIPE_PRICE_FOUNDER` | `/api/create-checkout-session` (Founder plan) | `/plans`' Founder button fails with a clear 503 |
 | `STRIPE_PRICE_SOLO` | `/api/create-checkout-session` (Solo plan) | Same, for the Solo button |
 | `STRIPE_PRICE_PRO` | `/api/create-checkout-session` (Pro plan) | Same, for the Pro button |
-| `STRIPE_PRICE_TEAM` | `/api/create-checkout-session` (Team plan) | Same, for the Team button |
+| `STRIPE_PRICE_TEAMS` | `/api/create-checkout-session` (Teams plan) | Same, for the Teams button — note the **plural** name; this app's own internal plan key is the singular `team` (`lib/plans.js`), but the Stripe-facing env var and Plans-page plan key are `teams`/`STRIPE_PRICE_TEAMS` exactly as specified |
+| `SUPABASE_SERVICE_ROLE_KEY` | `/api/stripe-webhook` only | **Not requested explicitly, added out of necessity** — see "Stripe webhook" below for why a service-role key is unavoidable here. Without it, the webhook returns `500` rather than silently failing to update anyone's plan |
 | `NEXT_PUBLIC_DEMO_MODE` | — | Cosmetic flag some pages read; the demo-vs-real behavior is actually driven by whether Supabase/OpenAI env vars are present, not this flag alone |
 
 `/api/generate-pdf` needs no environment variables — it never calls an
@@ -797,6 +851,58 @@ calls `exchangeCodeForSession`, and either lands on `/dashboard` or shows
 "This link expired or was already used. Please log in again." with a
 button back to `/login`. If "Confirm email" is off, a contractor never
 lands on this page at all during normal signup/login.
+
+## Stripe subscriptions setup
+
+**1. Database migration.** `supabase/schema.sql` already includes the
+three new `contractors` columns this needs
+(`stripe_customer_id`, `stripe_subscription_id`, `subscription_status`)
+as `alter table ... add column if not exists` statements, plus the
+`count_active_founder_subscribers()` function — re-running the whole file
+in the SQL Editor is safe on a project that already has the older
+`contractors` table; existing rows are untouched (the three new columns
+just come back `null` for them, which is correct — they have no Stripe
+subscription yet).
+
+**2. Get your Stripe Test Mode keys and price IDs.** Stripe Dashboard
+(make sure **Test mode** is on, top right) → Developers → API keys for
+`STRIPE_SECRET_KEY`. Create the four recurring Prices (Products →
+Add product, $10/$29/$59/$99 monthly) and copy each Price ID — not the
+Product ID — into `STRIPE_PRICE_FOUNDER`/`STRIPE_PRICE_SOLO`/`STRIPE_PRICE_PRO`/`STRIPE_PRICE_TEAMS`.
+
+**3. Register the webhook endpoint.** Stripe Dashboard → Developers →
+Webhooks → Add endpoint:
+- Endpoint URL: `https://YOUR-SITE.netlify.app/api/stripe-webhook`
+- Events to send: `checkout.session.completed`, `customer.subscription.updated`,
+  `customer.subscription.deleted`, `invoice.payment_failed`
+- Copy the **Signing secret** (starts `whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
+
+For local testing before deploying, the Stripe CLI's `stripe listen
+--forward-to localhost:3000/api/stripe-webhook` prints its own temporary
+signing secret to use instead.
+
+**4. Get a Supabase service-role key.** Supabase Dashboard → Project
+Settings → API → `service_role` secret (not the `anon` key) → set as
+`SUPABASE_SERVICE_ROLE_KEY`. **This key bypasses Row Level Security
+entirely — never put it in `NEXT_PUBLIC_*`, never reference it from any
+client component, and never add a way to call it from the browser.** It's
+imported in exactly one file, `app/api/stripe-webhook/route.js`, and
+nowhere else.
+
+**5. Set `NEXT_PUBLIC_SITE_URL`** to your real deployed URL (no trailing
+slash) — used for `success_url`/`cancel_url`/the billing portal's
+`return_url`. Without it, checkout and the billing portal both fail with
+a clear `503` rather than building a broken redirect.
+
+**What this does and doesn't do**: a completed Stripe payment updates the
+contractor's `plan`/`subscription_status`/`stripe_customer_id`/`stripe_subscription_id`
+via the webhook — that part is real and wired. What's deliberately **not**
+decided here: whether `customer.subscription.deleted` should immediately
+revoke plan access or let it run until the paid period ends — the webhook
+records `subscription_status: 'canceled'` either way and leaves `plan`
+untouched, since that product decision wasn't this pass's to make. Same
+for `past_due` (`invoice.payment_failed`): recorded, not yet acted on by
+any UI gate.
 
 ## Notes for whoever continues this build
 
