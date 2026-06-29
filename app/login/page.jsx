@@ -31,6 +31,22 @@ export default function LoginPage() {
     return true;
   }
 
+  function clearDemoSessionFlag() {
+    // A real login/signup must never leave a stale demo flag behind —
+    // this is what previously let a real account show a "Demo Mode"
+    // badge if the same browser had earlier clicked "Launch limited
+    // demo." Dashboard's own check is now also defended independently
+    // (see app/dashboard/page.jsx), but clearing it here at the source is
+    // the more correct fix.
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('snapquote.demoSession');
+      }
+    } catch (e) {
+      // Ignore — worst case the defense-in-depth check elsewhere still holds.
+    }
+  }
+
   async function handleCreateAccount() {
     setError('');
     setInfo('');
@@ -67,6 +83,7 @@ export default function LoginPage() {
     if (data?.session) {
       // "Confirm email" is off — a real session comes back immediately,
       // so there's nothing to leave the app for.
+      clearDemoSessionFlag();
       router.push('/dashboard');
     } else {
       // Supabase still requires email confirmation for this project.
@@ -95,6 +112,7 @@ export default function LoginPage() {
       return;
     }
 
+    clearDemoSessionFlag();
     router.push('/dashboard');
   }
 

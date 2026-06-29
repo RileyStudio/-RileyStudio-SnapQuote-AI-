@@ -48,11 +48,46 @@ create table if not exists contractors (
   license_note text,
   footer_text text,
   -- Phase 11 — feature gating only, no billing wired up. See
-  -- lib/plans.js for what each tier unlocks in the app.
-  plan text not null default 'solo' check (plan in ('solo', 'founder', 'pro', 'team')),
+  -- lib/plans.js for what each tier unlocks in the app. 'admin' is a
+  -- database-only role (never sold, never purchasable via Stripe) that
+  -- unlocks everything — granted by a manual SQL update, never by the
+  -- user themselves (the billing-column guard trigger in
+  -- migration_billing_admin.sql enforces that).
+  plan text not null default 'solo' check (plan in ('solo', 'founder', 'pro', 'team', 'admin')),
+  -- Stripe billing (see app/api/stripe-webhook/route.js). All are null/
+  -- default until a contractor actually subscribes — that's the expected
+  -- state for every row before these columns existed, and for any
+  -- demo/local-only contractor that never goes through real checkout.
+  -- subscription_status mirrors Stripe's own status strings directly:
+  -- active, trialing, past_due, canceled, unpaid.
+  stripe_customer_id text,
+  stripe_subscription_id text,
+  subscription_status text,
+  -- current_period_end: when the paid period renews/ends (surfaced as the
+  -- renewal date). cancel_at_period_end: cancelled-but-still-active.
+  -- billing_email: Stripe's billing email, may differ from login email.
+  current_period_end timestamptz,
+  cancel_at_period_end boolean not null default false,
+  billing_email text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Safety net for a project that already ran an earlier version of this
+-- file: `create table if not exists` above is a no-op against a table
+-- that already exists, so these three columns would otherwise never get
+-- added to an existing contractors table. Safe to re-run — every
+-- existing row simply gets these three new columns as null, nothing else
+-- about the row changes.
+alter table contractors add column if not exists stripe_customer_id text;
+alter table contractors add column if not exists stripe_subscription_id text;
+alter table contractors add column if not exists subscription_status text;
+alter table contractors add column if not exists current_period_end timestamptz;
+alter table contractors add column if not exists cancel_at_period_end boolean not null default false;
+alter table contractors add column if not exists billing_email text;
+
+create index if not exists idx_contractors_stripe_customer_id on contractors(stripe_customer_id);
+create index if not exists idx_contractors_stripe_subscription_id on contractors(stripe_subscription_id);
 
 -- ─────────────────────────────────────────────────────────
 -- 3. contractor_settings — one row per contractor (1:1).
@@ -374,3 +409,35 @@ $$;
 
 grant execute on function get_quote_by_token(uuid) to anon, authenticated;
 grant execute on function approve_estimate(uuid) to anon, authenticated;
+
+-- ─────────────────────────────────────────────────────────
+-- Stripe billing support — see lib/founderSeats.js and
+-- app/api/stripe-webhook/route.js.
+--
+-- This function is deliberately the ONLY Stripe-related thing exposed to
+-- anon/authenticated via RPC. It's safe to make public because it only
+-- ever returns a single aggregate integer (how many active Founder
+-- subscribers exist right now) — never any row-level data, and no write
+-- capability whatsoever. The Plans page needs this number visible to
+-- logged-out visitors too ("Founding Contractor seats remaining: X of
+-- 10"), so it has to be callable without a session.
+--
+-- The webhook's actual *writes* (plan, subscription_status,
+-- stripe_customer_id, stripe_subscription_id) deliberately do NOT go
+-- through any function grantable to anon/authenticated — a function with
+-- that write power, if ever exposed that broadly, would let anyone grant
+-- themselves a paid plan for free by just calling it with their own id.
+-- The webhook route uses a Supabase service-role key directly instead
+-- (server-only, never client-facing) — see README → "Stripe webhook".
+create or replace function count_active_founder_subscribers()
+returns integer
+language sql
+security definer
+set search_path = public
+as $$
+  select count(*)::integer
+  from contractors
+  where plan = 'founder' and subscription_status = 'active';
+$$;
+
+grant execute on function count_active_founder_subscribers() to anon, authenticated;

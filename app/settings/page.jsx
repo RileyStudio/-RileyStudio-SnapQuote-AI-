@@ -10,7 +10,7 @@ import TextAreaField from '@/components/TextAreaField';
 import LogoUploader from '@/components/LogoUploader';
 import { DEFAULT_SETTINGS, getSettings, saveSettings, resetSettings, initialsOf } from '@/lib/settings';
 import { supabase } from '@/lib/supabaseClient';
-import { getSettingsRemote, saveSettingsRemote, saveContractorPlanRemote } from '@/lib/supabaseSettings';
+import { getSettingsRemote, saveSettingsRemote } from '@/lib/supabaseSettings';
 import { uploadLogo } from '@/lib/supabaseStorage';
 import { PLANS, PLAN_ORDER, planLabel, hasFeature } from '@/lib/plans';
 
@@ -76,18 +76,14 @@ export default function SettingsPage() {
     setTimeout(() => setLogoUploadStatus(''), 2500);
   }
 
-  async function handlePlanChange(newPlan) {
+  // Local/demo mode only now — a real account's plan cards link to
+  // /plans for actual Stripe checkout instead of calling this (see the
+  // Plan section's JSX below). This function intentionally has no
+  // "remote" branch anymore: there is no code path left in this app that
+  // grants a real account a plan for free.
+  function handlePlanChange(newPlan) {
     setPlan(newPlan);
-    if (dataSource === 'remote') {
-      try {
-        await saveContractorPlanRemote(contractorId, newPlan);
-      } catch (e) {
-        flashMessage(e.message || 'Could not change plan.');
-        return;
-      }
-    } else {
-      saveSettings({ businessProfile, branding, estimateTerms, plan: newPlan });
-    }
+    saveSettings({ businessProfile, branding, estimateTerms, plan: newPlan });
     flashMessage(`Switched to the ${planLabel(newPlan)} plan.`);
   }
 
@@ -154,18 +150,23 @@ export default function SettingsPage() {
             email notifications), not to charge anyone. */}
         <div className="bg-white rounded-card shadow-card p-5">
           <SectionLabel>Plan</SectionLabel>
+          {plan === 'admin' && (
+            <div className="mb-3 rounded-card bg-ink text-paper px-4 py-3">
+              <p className="font-display font-bold text-sm">Admin account</p>
+              <p className="text-xs text-paper/70 mt-1">
+                You have full administrator access to every feature. This role isn&apos;t a
+                purchasable plan and doesn&apos;t require a subscription.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {PLAN_ORDER.map((p) => {
               const isCurrent = plan === p;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => handlePlanChange(p)}
-                  className={`text-left rounded-card border p-4 transition-colors ${
-                    isCurrent ? 'border-orange bg-orange/5' : 'border-line bg-white hover:bg-line/20'
-                  }`}
-                >
+              const cardClasses = `text-left rounded-card border p-4 transition-colors ${
+                isCurrent ? 'border-orange bg-orange/5' : 'border-line bg-white hover:bg-line/20'
+              }`;
+              const cardContent = (
+                <>
                   <p className="font-display font-bold text-lg flex items-center gap-2">
                     {PLANS[p].label}
                     {isCurrent && (
@@ -176,17 +177,57 @@ export default function SettingsPage() {
                   </p>
                   <p className="font-display font-extrabold text-base mt-0.5">{PLANS[p].price}</p>
                   <p className="text-xs text-ink/60 mt-1">{PLANS[p].tagline}</p>
+                </>
+              );
+
+              // Real account: this must NEVER instantly grant a plan for
+              // free — that would completely bypass Stripe. Clicking
+              // anything other than the current plan goes to /plans for
+              // real checkout; the current plan's card is just a
+              // (non-interactive) status display.
+              if (dataSource === 'remote') {
+                if (isCurrent) {
+                  return (
+                    <div key={p} className={cardClasses}>
+                      {cardContent}
+                    </div>
+                  );
+                }
+                return (
+                  <Link key={p} href="/plans" className={cardClasses}>
+                    {cardContent}
+                  </Link>
+                );
+              }
+
+              // Demo/local mode: the original free, instant switch — by
+              // design, so anyone can try every gate without paying.
+              return (
+                <button key={p} type="button" onClick={() => handlePlanChange(p)} className={cardClasses}>
+                  {cardContent}
                 </button>
               );
             })}
           </div>
           <p className="text-xs text-ink/45 mt-3">
-            No payment required — this switches your plan instantly for demo purposes. Full
-            feature comparison is on the{' '}
-            <Link href="/#pricing" className="underline">
-              landing page
-            </Link>
-            .
+            {dataSource === 'remote' ? (
+              <>
+                Changing plans is handled by Stripe —{' '}
+                <Link href="/plans" className="underline">
+                  visit Plans
+                </Link>{' '}
+                to subscribe or switch. <Link href="/billing" className="underline">Manage your existing subscription</Link>.
+              </>
+            ) : (
+              <>
+                No payment required — this switches your plan instantly for demo purposes. Full
+                feature comparison is on the{' '}
+                <Link href="/plans" className="underline">
+                  Plans page
+                </Link>
+                .
+              </>
+            )}
           </p>
           {hasFeature(plan, 'founderPricing') && (
             <div className="mt-4 rounded-card bg-ink text-paper px-4 py-3">
@@ -461,11 +502,14 @@ function UpsellCard({ title, description, requiredPlan, altPlan }) {
           {planLabel(requiredPlan)}{altPlan ? ` / ${planLabel(altPlan)}` : '+'}
         </span>
       </div>
-      <p className="text-sm text-ink/60">{description}</p>
-      <p className="text-xs text-ink/40 mt-2">
-        Switch to the {planLabel(requiredPlan)}
-        {altPlan ? ` or ${planLabel(altPlan)}` : ''} plan above to unlock this.
-      </p>
+      <p className="text-sm text-ink/60 mb-3">{description}</p>
+      <Link
+        href="/plans"
+        className="tap-target inline-flex items-center justify-center rounded-card bg-orange
+          text-white font-display font-semibold text-sm px-5 py-2.5 hover:bg-orange-dark transition-colors"
+      >
+        Upgrade to {planLabel(requiredPlan)}{altPlan ? ` or ${planLabel(altPlan)}` : ''}
+      </Link>
     </div>
   );
 }

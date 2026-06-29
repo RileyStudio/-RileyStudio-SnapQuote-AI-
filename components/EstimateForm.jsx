@@ -19,6 +19,7 @@ import { getEstimateByIdRemote, saveEstimateRemote } from '@/lib/supabaseEstimat
 import { getSettingsRemote } from '@/lib/supabaseSettings';
 import { uploadEstimatePhoto } from '@/lib/supabaseStorage';
 import { tryConsumeDemoLimit } from '@/lib/demoLimits';
+import { hasFeature } from '@/lib/plans';
 import DemoLimitNotice from '@/components/DemoLimitNotice';
 
 function newLineItemId() {
@@ -55,6 +56,7 @@ export default function EstimateForm({ estimateId }) {
   const [dataSource, setDataSource] = useState('local');
   const [contractorId, setContractorId] = useState(null);
   const [contractorEmail, setContractorEmail] = useState(null);
+  const [plan, setPlan] = useState('solo');
 
   const [customer, setCustomer] = useState({ name: '', phone: '', email: '', address: '' });
   const [job, setJob] = useState({ title: '', description: '', start_date: '', end_date: '' });
@@ -97,6 +99,9 @@ export default function EstimateForm({ estimateId }) {
         setContractorId(activeContractorId);
         setContractorEmail(activeContractorEmail);
 
+        const settings = await getSettingsRemote(activeContractorId);
+        setPlan(settings.plan || 'solo');
+
         if (isEditing) {
           const existing = await getEstimateByIdRemote(estimateId);
           if (!existing) {
@@ -109,7 +114,6 @@ export default function EstimateForm({ estimateId }) {
           return;
         }
 
-        const settings = await getSettingsRemote(activeContractorId);
         const defaults = defaultEstimateNotes(settings.estimateTerms);
         setNotes((prev) => ({ ...prev, warranty: defaults.warranty, payment_terms: defaults.payment_terms }));
         setLoadingRecord(false);
@@ -117,6 +121,8 @@ export default function EstimateForm({ estimateId }) {
       }
 
       setDataSource('local');
+      const settings = getSettings();
+      setPlan(settings.plan || 'solo');
 
       if (isEditing) {
         const existing = getEstimateById(estimateId);
@@ -133,7 +139,6 @@ export default function EstimateForm({ estimateId }) {
       // Brand-new estimate — start Notes and Terms from the contractor's
       // saved defaults (Settings → Default Estimate Terms), or the built-in
       // demo defaults if nothing's been saved yet.
-      const settings = getSettings();
       const defaults = defaultEstimateNotes(settings.estimateTerms);
       setNotes((prev) => ({ ...prev, warranty: defaults.warranty, payment_terms: defaults.payment_terms }));
       setLoadingRecord(false);
@@ -495,6 +500,24 @@ export default function EstimateForm({ estimateId }) {
               </div>
             </div>
           </div>
+
+          {/* Team Assignment — Teams plan only. No real multi-user/team
+              system exists yet (same as Settings' Team section); this is
+              a clearly-labeled placeholder for it, not a working feature. */}
+          {hasFeature(plan, 'multiUser') && (
+            <div className="bg-white rounded-card shadow-card p-5">
+              <SectionLabel>Team Assignment</SectionLabel>
+              <p className="text-xs text-ink/45 mb-3">
+                Assign this job to a crew member once team accounts exist.
+              </p>
+              <select
+                disabled
+                className="tap-target w-full rounded-card border border-line bg-line/10 px-3 text-sm text-ink/40 cursor-not-allowed"
+              >
+                <option>Unassigned (team accounts coming soon)</option>
+              </select>
+            </div>
+          )}
 
           {/* AI Job Notes — feeds /api/transcribe and /api/draft-estimate */}
           <div className="bg-white rounded-card shadow-card p-5">

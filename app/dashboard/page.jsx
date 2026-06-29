@@ -279,7 +279,7 @@ export default function DashboardPage() {
             <Logo size="sm" />
             <p className="text-sm text-ink/60 mt-1 flex items-center gap-2">
               {contractor.business_name}
-              {isDemoSession && (
+              {isDemoSession && dataSource !== 'remote' && (
                 <span className="font-display font-semibold text-[10px] uppercase tracking-wide
                   bg-site/10 text-site rounded-full px-2 py-0.5">
                   Demo Mode
@@ -358,8 +358,11 @@ export default function DashboardPage() {
 
       {!loading && jobs.length > SOLO_HISTORY_LIMIT && !hasFeature(plan, 'history') && (
         <p className="text-xs text-ink/45 mb-4">
-          Showing your {SOLO_HISTORY_LIMIT} most recent estimates. Upgrade to{' '}
-          {planLabel('founder')} or {planLabel('pro')} in Settings for full history, search, and filters.
+          Showing your {SOLO_HISTORY_LIMIT} most recent estimates.{' '}
+          <Link href="/plans" className="underline">
+            Upgrade to {planLabel('founder')} or {planLabel('pro')}
+          </Link>{' '}
+          for full history, search, and filters.
         </p>
       )}
 

@@ -1,15 +1,18 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import PricingTable from '@/components/PricingTable';
+import landingImage from './_assets/snapquote-landing.png';
 
 export default function LandingPage() {
   return (
     <main className="bg-[#faf8f4] text-ink">
       <section className="relative mx-auto w-full max-w-[1536px] overflow-hidden bg-[#faf8f4]">
-        <img
-          src="/snapquote-landing.png"
+        <Image
+          src={landingImage}
           alt="SnapQuote AI landing page preview showing estimate creation, customer quote approval, and the three-step workflow."
-          className="block w-full h-auto select-none"
-          draggable="false"
+          className="block h-auto w-full select-none"
+          priority
+          draggable={false}
         />
 
         {/* Top navigation click targets placed over the rendered image text. */}

@@ -1,43 +1,77 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
 import { PLANS } from '@/lib/plans';
 import { supabase } from '@/lib/supabaseClient';
+import { FOUNDER_SEAT_TOTAL, getFounderSeatsRemaining } from '@/lib/founderSeats';
 
 // Founder-first display order — same reasoning as components/PricingTable.jsx:
 // this is a marketing-emphasis choice, separate from lib/plans.js's
 // PLAN_ORDER (which exists for feature-gating logic).
 const DISPLAY_ORDER = ['founder', 'solo', 'pro', 'team'];
 
+// This page (and lib/plans.js generally) uses the app's own internal plan
+// key ("team", singular) everywhere for display/gating consistency.
+// /api/create-checkout-session and the STRIPE_PRICE_* env vars use the
+// plural "teams" specifically — this is the one place that translation
+// happens for this page.
+const STRIPE_PLAN_KEY = { founder: 'founder', solo: 'solo', pro: 'pro', team: 'teams' };
+
 export default function PlansPage() {
+  const router = useRouter();
   const [loadingPlan, setLoadingPlan] = useState(null);
   const [error, setError] = useState('');
   const [session, setSession] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [founderSeatsRemaining, setFounderSeatsRemaining] = useState(null); // null = unknown/still loading
 
-  // Read-only — never modifies auth state. If a real Supabase session
-  // happens to exist, its email/id ride along with the checkout request
-  // as optional metadata for a future webhook phase to use; checkout
-  // works identically with no change to this app's auth flow either way.
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => setSession(data?.session || null));
+    if (!supabase) {
+      setSessionChecked(true);
+      return;
+    }
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data?.session || null);
+      setSessionChecked(true);
+    });
   }, []);
+
+  useEffect(() => {
+    getFounderSeatsRemaining().then(setFounderSeatsRemaining);
+  }, []);
+
+  const founderSoldOut = founderSeatsRemaining === 0;
 
   async function handleSubscribe(planKey) {
     setError('');
+
+    // Checked client-side for a fast redirect, AND independently
+    // re-verified server-side in the route itself (a session shown here
+    // could be stale, or this call could be bypassed entirely) — this is
+    // the fast path, not the only enforcement.
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+
+    if (planKey === 'founder' && founderSoldOut) {
+      setError('Founder seats are sold out.');
+      return;
+    }
+
     setLoadingPlan(planKey);
 
     try {
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan: planKey,
-          email: session?.user?.email || undefined,
-          clientReferenceId: session?.user?.id || undefined,
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ plan: STRIPE_PLAN_KEY[planKey] }),
       });
 
       const data = await response.json();
@@ -63,8 +97,16 @@ export default function PlansPage() {
       </header>
 
       <h1 className="font-display font-extrabold text-3xl mb-2">Plans</h1>
-      <p className="text-ink/60 mb-8 max-w-xl">
+      <p className="text-ink/60 mb-2 max-w-xl">
         Pick a plan to subscribe. You&apos;ll finish payment on Stripe&apos;s secure checkout page.
+      </p>
+      <p className="text-ink/60 mb-2 max-w-xl">
+        Founder includes active Pro-level features for $10/month while seats remain.
+      </p>
+      <p className="text-sm font-display font-semibold text-orange-dark mb-8">
+        {founderSeatsRemaining === null
+          ? `— of ${FOUNDER_SEAT_TOTAL} Founder seats remaining`
+          : `${founderSeatsRemaining} of ${FOUNDER_SEAT_TOTAL} Founder seats remaining`}
       </p>
 
       {error && (
@@ -77,19 +119,24 @@ export default function PlansPage() {
         {DISPLAY_ORDER.map((key) => {
           const plan = PLANS[key];
           const isHighlight = key === 'founder';
+          const isSoldOut = key === 'founder' && founderSoldOut;
+          const isDisabled = loadingPlan !== null || isSoldOut;
+
           return (
             <div
               key={key}
               className={`rounded-card p-5 flex flex-col ${
                 isHighlight ? 'border-2 border-orange bg-orange/5' : 'border border-line bg-white'
-              }`}
+              } ${isSoldOut ? 'opacity-60' : ''}`}
             >
               {isHighlight && (
                 <p className="text-[10px] font-display font-bold uppercase tracking-wide text-orange mb-2">
-                  Best value while it lasts
+                  {isSoldOut ? 'Sold out' : 'Best value while it lasts'}
                 </p>
               )}
-              <p className="font-display font-bold text-xl">{plan.label}</p>
+              <p className="font-display font-bold text-xl">
+                {plan.label}
+              </p>
               <p className="font-display font-extrabold text-3xl mt-1">{plan.price}</p>
               {plan.priceNote && <p className="text-xs text-ink/50 mt-0.5">{plan.priceNote}</p>}
 
@@ -107,7 +154,7 @@ export default function PlansPage() {
               <button
                 type="button"
                 onClick={() => handleSubscribe(key)}
-                disabled={loadingPlan !== null}
+                disabled={isDisabled}
                 className={`tap-target w-full mt-5 rounded-card font-display font-bold text-base px-6
                   transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                     isHighlight
@@ -115,7 +162,15 @@ export default function PlansPage() {
                       : 'bg-site text-white hover:bg-site-dark'
                   }`}
               >
-                {loadingPlan === key ? 'Starting checkout…' : `Subscribe to ${plan.label}`}
+                {isSoldOut
+                  ? 'Sold out'
+                  : loadingPlan === key
+                    ? 'Starting checkout…'
+                    : !sessionChecked
+                      ? 'Subscribe'
+                      : session
+                        ? `Subscribe to ${plan.label}`
+                        : 'Log in to subscribe'}
               </button>
             </div>
           );
@@ -124,8 +179,7 @@ export default function PlansPage() {
 
       <p className="text-xs text-ink/40 mt-8 max-w-xl">
         Checkout is handled entirely by Stripe — card details never touch this app. After payment,
-        you&apos;ll land on a confirmation page; account activation for a completed subscription is
-        a separate step not built yet.
+        you&apos;ll land on a confirmation page while your plan activates.
       </p>
     </main>
   );

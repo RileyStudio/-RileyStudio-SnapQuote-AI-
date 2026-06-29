@@ -39,6 +39,14 @@ export default function AuthCallbackPage() {
         return;
       }
 
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem('snapquote.demoSession');
+        }
+      } catch (e) {
+        // Ignore — Dashboard's own check is defended independently too.
+      }
+
       router.replace('/dashboard');
     }
 

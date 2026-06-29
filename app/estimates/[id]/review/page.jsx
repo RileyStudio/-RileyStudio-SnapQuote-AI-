@@ -292,7 +292,11 @@ export default function EstimateReviewPage({ params }) {
                 </BigButton>
               ) : (
                 <p className="text-xs text-ink/45">
-                  Sharing is available on the {planLabel('founder')} or {planLabel('pro')} plan.
+                  Sharing is available on the {planLabel('founder')} or {planLabel('pro')} plan.{' '}
+                  <Link href="/plans" className="underline">
+                    Upgrade
+                  </Link>
+                  .
                 </p>
               )}
             </div>

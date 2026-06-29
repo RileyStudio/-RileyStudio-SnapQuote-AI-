@@ -3,25 +3,46 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
+import { PLANS } from '@/lib/plans';
 
-// No webhook yet (out of scope for this pass) — this page is purely a
-// confirmation screen for whoever just finished Stripe Checkout. It does
-// not verify the session server-side, does not touch Supabase, and does
-// not activate anything; it just reads ?session_id= for display.
+// Webhook (app/api/stripe-webhook/route.js) is the actual source of
+// truth for activation — this page never writes to Supabase. The
+// optional /api/checkout-session-status lookup below is purely cosmetic
+// (shows which plan Stripe recorded); if it fails for any reason, the
+// page still shows a correct, honest confirmation without it.
 export default function BillingSuccessPage() {
   const [sessionId, setSessionId] = useState(null);
+  const [planKey, setPlanKey] = useState(null);
 
   useEffect(() => {
-    setSessionId(new URLSearchParams(window.location.search).get('session_id'));
+    const id = new URLSearchParams(window.location.search).get('session_id');
+    setSessionId(id);
+    if (!id) return;
+
+    fetch(`/api/checkout-session-status?session_id=${encodeURIComponent(id)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.plan) setPlanKey(data.plan === 'team' ? 'teams' : data.plan);
+      })
+      .catch(() => {
+        // Cosmetic only — a failed lookup just means the generic message
+        // below is shown instead of the plan name. Never treated as an error.
+      });
   }, []);
+
+  const planLabel = planKey && PLANS[planKey === 'teams' ? 'team' : planKey]?.label;
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-5 text-center">
       <Logo size="lg" className="justify-center mb-6" />
-      <p className="font-display font-bold text-2xl mb-2">You&apos;re subscribed 🎉</p>
+      <p className="font-display font-bold text-2xl mb-2">Payment received 🎉</p>
+      <p className="text-sm text-ink/60 max-w-sm mb-2">
+        {planLabel
+          ? `Thanks for subscribing to the ${planLabel} plan.`
+          : 'Thanks for subscribing to SnapQuote.'}
+      </p>
       <p className="text-sm text-ink/60 max-w-sm mb-6">
-        Thanks for becoming a SnapQuote customer. Account activation for your subscription is a
-        separate step not built yet — check back soon.
+        Your plan is being activated now — this usually only takes a moment.
       </p>
       {sessionId && (
         <p className="text-xs text-ink/40 mb-6 break-all">Reference: {sessionId}</p>
