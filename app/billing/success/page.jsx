@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
-import { PLANS } from '@/lib/plans';
+import { planLabel as planLabelFor, normalizePlan } from '@/lib/plans';
+import { supabase } from '@/lib/supabaseClient';
 
 // Webhook (app/api/stripe-webhook/route.js) is the actual source of
 // truth for activation — this page never writes to Supabase. The
@@ -19,10 +20,18 @@ export default function BillingSuccessPage() {
     setSessionId(id);
     if (!id) return;
 
-    fetch(`/api/checkout-session-status?session_id=${encodeURIComponent(id)}`)
-      .then((res) => (res.ok ? res.json() : null))
+    supabase?.auth.getSession()
+      .then(({ data }) => {
+        const token = data?.session?.access_token;
+        return fetch(`/api/checkout-session-status?session_id=${encodeURIComponent(id)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+      })
+      .then((res) => (res?.ok ? res.json() : null))
       .then((data) => {
-        if (data?.plan) setPlanKey(data.plan === 'team' ? 'teams' : data.plan);
+        // Plan keys are canonical now; normalize defensively in case an
+        // older in-flight session still carried "team".
+        if (data?.plan) setPlanKey(normalizePlan(data.plan));
       })
       .catch(() => {
         // Cosmetic only — a failed lookup just means the generic message
@@ -30,7 +39,7 @@ export default function BillingSuccessPage() {
       });
   }, []);
 
-  const planLabel = planKey && PLANS[planKey === 'teams' ? 'team' : planKey]?.label;
+  const planLabel = planKey ? planLabelFor(planKey) : null;
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-5 text-center">
@@ -42,7 +51,7 @@ export default function BillingSuccessPage() {
           : 'Thanks for subscribing to SnapQuote.'}
       </p>
       <p className="text-sm text-ink/60 max-w-sm mb-6">
-        Your plan is being activated now — this usually only takes a moment.
+        Your plan is active. If your dashboard still shows the old plan, refresh once.
       </p>
       {sessionId && (
         <p className="text-xs text-ink/40 mb-6 break-all">Reference: {sessionId}</p>

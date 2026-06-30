@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { normalizePlan as normalizePlanKey } from '@/lib/plans';
 
 // Node's crypto module (createHmac, timingSafeEqual) isn't available in
 // the Edge runtime — this route needs the Node runtime explicitly.
@@ -9,6 +10,14 @@ export const runtime = 'nodejs';
 // Same default tolerance Stripe's own SDK uses for replay protection:
 // reject an otherwise-valid signature if its timestamp is too old.
 const TOLERANCE_SECONDS = 300;
+
+// Founder is a marketing-limited offer capped at this many ACTIVE
+// subscribers. Enforced practically (see handleCheckoutCompleted's
+// overflow guard), not with race-proof locking — by explicit product
+// decision, an 11th racing payment is resolved manually rather than
+// blocking launch on perfect enforcement.
+const FOUNDER_SEAT_CAP = 10;
+
 
 // Plan-key consistency: app/api/create-checkout-session/route.js already
 // translates Stripe-facing plan keys (founder/solo/pro/teams — note
@@ -121,9 +130,48 @@ async function handleCheckoutCompleted(admin, session) {
     stripe_subscription_id: session.subscription || null,
     subscription_status: 'active',
   };
-  if (session.metadata?.plan) updates.plan = session.metadata.plan;
-  // customer_details.email is what Stripe collected at checkout; fall back
-  // to the metadata email we set when creating the session.
+
+  // Normalize the incoming plan key. The checkout route already writes the
+  // canonical key (founder/solo/pro/teams), but normalize defensively so a
+  // legacy "team" from an in-flight older session still lands as "teams".
+  let incomingPlan = session.metadata?.plan
+    ? normalizePlanKey(session.metadata.plan)
+    : null;
+
+  // ── Founder overflow guard (practical, not race-proof) ──
+  // The checkout route blocks a Founder purchase when seats are already
+  // full, but two people can clear that check within the same instant and
+  // both pay. So we re-count here, at activation time, and refuse to be the
+  // one that pushes the active Founder count past the cap. The pre-checkout
+  // count does NOT include this brand-new subscription yet, so "would this
+  // make it exceed 10" means: current active founders (excluding this row)
+  // >= 10 already.
+  if (incomingPlan === 'founder') {
+    const { data: activeCount, error: countError } = await admin.rpc(
+      'count_active_founder_subscribers'
+    );
+    // Count of EXISTING active founders, not counting this contractor's row.
+    const existingFounders =
+      !countError && typeof activeCount === 'number' && Number.isFinite(activeCount)
+        ? activeCount
+        : 0;
+
+    if (existingFounders >= FOUNDER_SEAT_CAP) {
+      // This payment is the 11th (or beyond). Do NOT grant Founder. Park
+      // them on Solo and flag for manual admin resolution (refund, or move
+      // to a paid tier, or honor as Founder if a seat frees up). The
+      // customer still has an active paid subscription in Stripe — this is
+      // a plan-label decision, not a cancellation.
+      updates.plan = 'solo';
+      updates.founder_overflow = true;
+      const billingEmail = session.customer_details?.email || session.metadata?.email;
+      if (billingEmail) updates.billing_email = billingEmail;
+      await admin.from('contractors').update(updates).eq('id', contractorId);
+      return;
+    }
+  }
+
+  if (incomingPlan) updates.plan = incomingPlan;
   const billingEmail = session.customer_details?.email || session.metadata?.email;
   if (billingEmail) updates.billing_email = billingEmail;
 
@@ -154,7 +202,7 @@ async function handleSubscriptionUpdated(admin, subscription) {
   if (typeof subscription.current_period_end === 'number') {
     updates.current_period_end = new Date(subscription.current_period_end * 1000).toISOString();
   }
-  if (subscription.metadata?.plan) updates.plan = subscription.metadata.plan;
+  if (subscription.metadata?.plan) updates.plan = normalizePlanKey(subscription.metadata.plan);
 
   await admin.from('contractors').update(updates).eq('id', contractorId);
 }

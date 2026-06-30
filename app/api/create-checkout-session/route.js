@@ -9,25 +9,16 @@ import { areFounderSeatsAvailable } from '@/lib/founderSeats';
 // environment has no network access to verify a new package would
 // resolve, and "build must pass" is explicit.
 
-// Stripe-facing plan keys (what this route and the Plans page use) vs.
-// this app's own internal plan key (lib/plans.js, the contractors.plan
-// column's CHECK constraint) — every key matches except "teams", which
-// stays plural here to match STRIPE_PRICE_TEAMS exactly as specified,
-// while the app's plan key has always been the singular "team". This is
-// the one place that mapping lives; the webhook trusts metadata.plan
-// as-is rather than re-deriving it.
+// Plan keys are now identical everywhere — Stripe-facing, app-internal,
+// Stripe metadata, and the Supabase contractors.plan column all use the
+// same canonical keys (founder/solo/pro/teams). There is no longer a
+// singular "team" to translate to; what's written to metadata.plan is
+// exactly what the webhook stores and the UI reads.
 const PRICE_ENV_BY_PLAN = {
   founder: 'STRIPE_PRICE_FOUNDER',
   solo: 'STRIPE_PRICE_SOLO',
   pro: 'STRIPE_PRICE_PRO',
   teams: 'STRIPE_PRICE_TEAMS',
-};
-
-const APP_PLAN_KEY = {
-  founder: 'founder',
-  solo: 'solo',
-  pro: 'pro',
-  teams: 'team',
 };
 
 export async function POST(request) {
@@ -93,7 +84,9 @@ export async function POST(request) {
     );
   }
 
-  const appPlanKey = APP_PLAN_KEY[plan];
+  // The validated `plan` IS the canonical key now (founder/solo/pro/teams)
+  // — it's written straight to metadata and stored verbatim by the webhook.
+  const appPlanKey = plan;
 
   // Stripe's REST API uses application/x-www-form-urlencoded with its own
   // bracket-index convention for arrays/nested objects.

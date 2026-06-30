@@ -12,7 +12,7 @@ import { DEFAULT_SETTINGS, getSettings, saveSettings, resetSettings, initialsOf 
 import { supabase } from '@/lib/supabaseClient';
 import { getSettingsRemote, saveSettingsRemote } from '@/lib/supabaseSettings';
 import { uploadLogo } from '@/lib/supabaseStorage';
-import { PLANS, PLAN_ORDER, planLabel, hasFeature } from '@/lib/plans';
+import { PLANS, PLAN_ORDER, planLabel, hasFeature, normalizePlan } from '@/lib/plans';
 
 const BRAND_COLOR_PRESETS = ['#FF5A1F', '#1E5AA8', '#1F8A4C', '#C0392B', '#1C1F23', '#0E7C86'];
 
@@ -45,7 +45,7 @@ export default function SettingsPage() {
           setBusinessProfile(settings.businessProfile);
           setBranding(settings.branding);
           setEstimateTerms(settings.estimateTerms);
-          setPlan(settings.plan || 'solo');
+          setPlan(normalizePlan(settings.plan || 'solo'));
           return;
         }
       }
@@ -109,7 +109,7 @@ export default function SettingsPage() {
         setBranding(DEFAULT_SETTINGS.branding);
         setEstimateTerms(DEFAULT_SETTINGS.estimateTerms);
         setConfirmingReset(false);
-        flashMessage('Reset to demo defaults.');
+        flashMessage('Settings reset.');
       } catch (e) {
         flashMessage(e.message || 'Could not reset settings.');
       }
@@ -121,7 +121,7 @@ export default function SettingsPage() {
     setEstimateTerms(DEFAULT_SETTINGS.estimateTerms);
     setPlan(DEFAULT_SETTINGS.plan);
     setConfirmingReset(false);
-    flashMessage('Reset to demo defaults.');
+    flashMessage('Settings reset.');
   }
 
   function flashMessage(text) {
@@ -144,10 +144,7 @@ export default function SettingsPage() {
       </header>
 
       <div className="space-y-6">
-        {/* Plan — Phase 11: feature gates only, no billing wired up.
-            Switching is instant and free; the point is to demo what each
-            tier unlocks below (Branding) and elsewhere (Dashboard history,
-            email notifications), not to charge anyone. */}
+        {/* Plan status and Stripe billing links. Real accounts never switch plans here; demo/local mode can still test plan gates. */}
         <div className="bg-white rounded-card shadow-card p-5">
           <SectionLabel>Plan</SectionLabel>
           {plan === 'admin' && (
@@ -220,7 +217,7 @@ export default function SettingsPage() {
               </>
             ) : (
               <>
-                No payment required — this switches your plan instantly for demo purposes. Full
+                Demo mode only: this switches the visible plan instantly for testing. Full
                 feature comparison is on the{' '}
                 <Link href="/plans" className="underline">
                   Plans page
@@ -422,7 +419,7 @@ export default function SettingsPage() {
           <UpsellCard
             title="Team"
             description="Invite crew members so more than one person can manage estimates."
-            requiredPlan="team"
+            requiredPlan="teams"
           />
         )}
       </div>
@@ -435,7 +432,7 @@ export default function SettingsPage() {
 
         {confirmingReset ? (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-ink/60">Reset branding and terms to demo defaults?</span>
+            <span className="text-sm text-ink/60">Reset branding and terms to defaults?</span>
             <BigButton variant="ghost" fullWidth={false} className="px-4" onClick={handleReset}>
               Confirm Reset
             </BigButton>
@@ -455,7 +452,7 @@ export default function SettingsPage() {
             className="px-8"
             onClick={() => setConfirmingReset(true)}
           >
-            Reset Demo Settings
+            Reset Settings
           </BigButton>
         )}
 
@@ -466,7 +463,7 @@ export default function SettingsPage() {
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-line px-5 py-3 space-y-2 z-40">
         {confirmingReset ? (
           <div className="text-center">
-            <p className="text-xs text-ink/60 mb-2">Reset branding and terms to demo defaults?</p>
+            <p className="text-xs text-ink/60 mb-2">Reset branding and terms to defaults?</p>
             <div className="flex gap-2">
               <BigButton variant="ghost" onClick={() => setConfirmingReset(false)}>
                 Cancel

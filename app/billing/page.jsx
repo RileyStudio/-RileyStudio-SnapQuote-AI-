@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
 import { supabase } from '@/lib/supabaseClient';
-import { PLANS, planLabel } from '@/lib/plans';
+import { planLabel } from '@/lib/plans';
 
 export default function BillingPage() {
   const [loading, setLoading] = useState(true);
@@ -26,7 +26,7 @@ export default function BillingPage() {
       }
       const { data } = await supabase
         .from('contractors')
-        .select('plan, subscription_status, stripe_customer_id, current_period_end, cancel_at_period_end')
+        .select('plan, subscription_status, stripe_customer_id, stripe_subscription_id, current_period_end, cancel_at_period_end, founder_overflow')
         .eq('id', userId)
         .maybeSingle();
       setContractor(data || null);
@@ -90,7 +90,35 @@ export default function BillingPage() {
     );
   }
 
-  const planDisplay = PLANS[contractor.plan]?.label || planLabel(contractor.plan);
+  // Single source of truth: the contractor row written by the Stripe
+  // webhook. We deliberately do NOT fall back to Solo when plan is missing —
+  // that fallback is exactly what made a just-subscribed (or Teams) user
+  // see "$29 / Solo". Instead we model three honest states:
+  //   - hasSubscription: an active/known paid plan is on the row.
+  //   - isProcessing: payment happened (a Stripe customer or subscription id
+  //     exists) but the webhook hasn't written an active plan yet.
+  //   - neither: never subscribed.
+  const rawPlan = contractor.plan;
+  const status = contractor.subscription_status;
+  const startedCheckout = Boolean(
+    contractor.stripe_customer_id || contractor.stripe_subscription_id
+  );
+  // A plan is "real/active" only if there's an active-ish status backing it.
+  // 'admin' is always real (no Stripe needed).
+  const activeStatuses = ['active', 'trialing', 'past_due'];
+  const planIsActive =
+    rawPlan === 'admin' ||
+    (Boolean(rawPlan) && activeStatuses.includes(status));
+
+  // Processing: they paid (Stripe ids present) but no active plan recorded
+  // yet — the webhook may still be in flight. A terminal status
+  // (canceled/unpaid/etc.) is NOT processing — that's a former subscriber,
+  // and telling them to "refresh in a moment" would loop forever.
+  const terminalStatuses = ['canceled', 'unpaid', 'incomplete_expired'];
+  const isTerminal = terminalStatuses.includes(status);
+  const isProcessing = !planIsActive && startedCheckout && !isTerminal;
+
+  const planDisplay = planIsActive ? planLabel(rawPlan) : null;
 
   return (
     <main className="min-h-screen px-5 py-10 max-w-md mx-auto">
@@ -107,16 +135,37 @@ export default function BillingPage() {
         <p className="font-display text-xs uppercase tracking-wide text-ink/50 font-semibold mb-1">
           Current plan
         </p>
-        <p className="font-display font-bold text-xl mb-3">{planDisplay}</p>
 
-        <p className="font-display text-xs uppercase tracking-wide text-ink/50 font-semibold mb-1">
-          Subscription status
-        </p>
-        <p className="text-sm text-ink/80">
-          {contractor.subscription_status || 'No active subscription'}
-        </p>
+        {planIsActive ? (
+          <p className="font-display font-bold text-xl mb-3">Current plan: {planDisplay}</p>
+        ) : isProcessing ? (
+          <p className="font-display font-bold text-base mb-3 text-orange-dark">
+            Plan activation is processing. Refresh in a moment.
+          </p>
+        ) : (
+          <p className="font-display font-bold text-xl mb-3">No active plan</p>
+        )}
 
-        {contractor.current_period_end && (
+        {contractor.founder_overflow && (
+          <p className="text-xs text-orange-dark mb-3">
+            We received your payment, but all Founder seats were taken at activation. Our team
+            will reach out to resolve this — you haven&apos;t lost anything.
+          </p>
+        )}
+
+        {/* Status + renewal only make sense once something real exists. */}
+        {(planIsActive || isProcessing) && (
+          <>
+            <p className="font-display text-xs uppercase tracking-wide text-ink/50 font-semibold mb-1">
+              Subscription status
+            </p>
+            <p className="text-sm text-ink/80">
+              {contractor.subscription_status || 'Processing…'}
+            </p>
+          </>
+        )}
+
+        {planIsActive && contractor.current_period_end && (
           <>
             <p className="font-display text-xs uppercase tracking-wide text-ink/50 font-semibold mb-1 mt-3">
               {contractor.cancel_at_period_end ? 'Access ends' : 'Renews'}

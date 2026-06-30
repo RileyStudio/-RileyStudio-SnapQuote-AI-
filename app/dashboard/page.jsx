@@ -22,7 +22,7 @@ import {
   markEstimateApprovedRemote,
 } from '@/lib/supabaseEstimates';
 import ShareEstimateModal from '@/components/ShareEstimateModal';
-import { hasFeature, planLabel } from '@/lib/plans';
+import { hasFeature, planLabel, normalizePlan } from '@/lib/plans';
 
 const STATUS_FILTERS = ['all', 'draft', 'sent', 'approved'];
 const SOLO_HISTORY_LIMIT = 5;
@@ -80,7 +80,7 @@ export default function DashboardPage() {
             .single();
           if (contractorRow) {
             setContractor(contractorRow);
-            setPlan(contractorRow.plan || 'solo');
+            setPlan(normalizePlan(contractorRow.plan || 'solo'));
           }
 
           // Phase 8: queries the real `estimates` table (joined with its

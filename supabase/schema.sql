@@ -53,7 +53,7 @@ create table if not exists contractors (
   -- unlocks everything — granted by a manual SQL update, never by the
   -- user themselves (the billing-column guard trigger in
   -- migration_billing_admin.sql enforces that).
-  plan text not null default 'solo' check (plan in ('solo', 'founder', 'pro', 'team', 'admin')),
+  plan text not null default 'solo' check (plan in ('solo', 'founder', 'pro', 'teams', 'admin')),
   -- Stripe billing (see app/api/stripe-webhook/route.js). All are null/
   -- default until a contractor actually subscribes — that's the expected
   -- state for every row before these columns existed, and for any
@@ -69,6 +69,10 @@ create table if not exists contractors (
   current_period_end timestamptz,
   cancel_at_period_end boolean not null default false,
   billing_email text,
+  -- founder_overflow: set true by the webhook when a Founder payment
+  -- activates past the 10-seat cap (race condition); flags for manual
+  -- admin resolution. Normal accounts are always false.
+  founder_overflow boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

@@ -3,7 +3,7 @@ import { PLANS } from '@/lib/plans';
 // Founder-first display order — deliberately separate from PLAN_ORDER
 // (lib/plans.js), which exists for feature-gating logic, not marketing
 // emphasis. Founder is the cheapest plan but the one we want most visible.
-const DISPLAY_ORDER = ['founder', 'solo', 'pro', 'team'];
+const DISPLAY_ORDER = ['founder', 'solo', 'pro', 'teams'];
 
 export default function PricingTable({ highlightPlan = 'founder' }) {
   return (
