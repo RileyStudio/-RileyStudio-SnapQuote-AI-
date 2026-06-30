@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { DEFAULT_SETTINGS } from './settings';
+import { normalizePlan } from './plans';
 
 export async function getSettingsRemote(contractorId) {
   const { data: contractor } = await supabase
@@ -41,7 +42,7 @@ export async function getSettingsRemote(contractorId) {
       : DEFAULT_SETTINGS.estimateTerms,
     // Phase 11 — read alongside settings since it lives on the same
     // contractors row; see lib/plans.js for what each tier unlocks.
-    plan: contractor.plan || 'solo',
+    plan: normalizePlan(contractor.plan || 'solo'),
   };
 }
 

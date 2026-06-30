@@ -1,105 +1,125 @@
 -- ═════════════════════════════════════════════════════════════════════════
--- SnapQuote AI — Storage buckets + policies (Phase 10)
+-- SnapQuote AI — Plan-key normalization + Founder overflow migration
 --
--- Run this AFTER schema.sql and policies.sql, in the Supabase SQL Editor.
+-- Run this in the Supabase SQL Editor AFTER migration_billing_admin.sql.
+-- Safe on a project with live data: it only widens a CHECK constraint,
+-- rewrites legacy 'team' plan values to 'teams', adds one nullable column,
+-- and re-creates the billing-guard trigger to also protect that column.
+-- It never drops a table or deletes a row.
 --
--- Path convention these policies assume (the upload code that doesn't
--- exist yet — see Phase 10's scope note — will need to follow this):
---   logos:            logos/{contractor_id}/{filename}
---   estimate-photos:  estimate-photos/{contractor_id}/{estimate_id}/{filename}
--- storage.foldername(name) splits the object path into an array, so
--- (storage.foldername(name))[1] is the first folder (contractor_id) and
--- [2] is the second (estimate_id).
---
--- IF BUCKET CREATION VIA SQL FAILS IN YOUR PROJECT:
--- Inserting into storage.buckets directly (below) is the standard scripted
--- approach and works on most Supabase projects, but storage internals can
--- vary slightly by project/version. If the INSERT statements below error
--- in your SQL Editor, create the two buckets manually instead — Dashboard
--- → Storage → New Bucket → name exactly "logos" / "estimate-photos",
--- both set to **private** (not public) — then re-run just the POLICY
--- statements further down in this file; those always work via SQL
--- regardless of how the buckets themselves were created.
+-- WHY:
+--   The app used to key the Teams tier as singular 'team' internally while
+--   Stripe used plural 'teams'. That split caused a Teams subscriber's UI
+--   to silently read as "Solo" (a stored 'teams' value missed the 'team'
+--   lookup and fell back to Solo). The app now uses 'teams' everywhere.
+--   This migration brings the database in line:
+--     1. Allow 'teams' in the plan CHECK constraint.
+--     2. Convert any existing 'team' rows to 'teams'.
+--     3. Add founder_overflow (set by the webhook when an 11th Founder
+--        payment lands during a race; flags the account for manual review).
+--     4. Extend the billing-guard trigger to protect founder_overflow too.
 -- ═════════════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────
--- Buckets — both private. Access is controlled entirely by the
--- storage.objects policies below, not by bucket-level public/private
--- alone, since "public can read estimate photos" needs to be conditional
--- on the parent estimate's status, which a public bucket can't express.
+-- 1. Widen the plan CHECK to allow 'teams' (keep 'team' temporarily so the
+--    constraint doesn't reject existing rows BEFORE we rewrite them in
+--    step 2; step 3 then tightens it to drop 'team').
 -- ─────────────────────────────────────────────────────────
-insert into storage.buckets (id, name, public)
-values ('logos', 'logos', false)
-on conflict (id) do nothing;
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'contractors_plan_check') then
+    alter table contractors drop constraint contractors_plan_check;
+  end if;
+end $$;
 
-insert into storage.buckets (id, name, public)
-values ('estimate-photos', 'estimate-photos', false)
-on conflict (id) do nothing;
-
--- ─────────────────────────────────────────────────────────
--- logos bucket policies
--- ─────────────────────────────────────────────────────────
-
--- Contractor: full control over files in their own folder.
-create policy "logos: contractor can read own"
-  on storage.objects for select
-  using (bucket_id = 'logos' and (storage.foldername(name))[1] = auth.uid()::text);
-
-create policy "logos: contractor can upload own"
-  on storage.objects for insert
-  with check (bucket_id = 'logos' and (storage.foldername(name))[1] = auth.uid()::text);
-
-create policy "logos: contractor can update own"
-  on storage.objects for update
-  using (bucket_id = 'logos' and (storage.foldername(name))[1] = auth.uid()::text);
-
-create policy "logos: contractor can delete own"
-  on storage.objects for delete
-  using (bucket_id = 'logos' and (storage.foldername(name))[1] = auth.uid()::text);
-
--- Public: a logo is shown on the public quote page, so anyone needs read
--- access to a logo belonging to a contractor who has at least one
--- sent/approved estimate (i.e., a live quote exists to show it on).
--- Same enumeration-style tradeoff noted in policies.sql applies here too
--- — a motivated requester could read any contractor's logo this way, not
--- just the one tied to a quote they actually hold. Logos are low-
--- sensitivity (a business's own public branding), so this is a
--- reasonable simplification, but note it for completeness.
-create policy "logos: public can read for any contractor with a live quote"
-  on storage.objects for select
-  using (
-    bucket_id = 'logos'
-    and exists (
-      select 1 from estimates
-      where estimates.contractor_id::text = (storage.foldername(name))[1]
-        and estimates.status in ('sent', 'approved')
-    )
-  );
+alter table contractors
+  add constraint contractors_plan_check
+  check (plan in ('solo', 'founder', 'pro', 'team', 'teams', 'admin'));
 
 -- ─────────────────────────────────────────────────────────
--- estimate-photos bucket policies
+-- 2. Rewrite legacy 'team' rows to 'teams'. The billing-guard trigger
+--    blocks plan changes from non-privileged sessions, but this runs in
+--    the SQL editor (a privileged connection), so it passes.
 -- ─────────────────────────────────────────────────────────
+update contractors set plan = 'teams' where plan = 'team';
 
--- Contractor: full control over files under their own contractor_id folder.
-create policy "estimate-photos: contractor manages own"
-  on storage.objects for all
-  using (bucket_id = 'estimate-photos' and (storage.foldername(name))[1] = auth.uid()::text)
-  with check (bucket_id = 'estimate-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+-- ─────────────────────────────────────────────────────────
+-- 3. Tighten the CHECK to the final canonical set (no more 'team').
+-- ─────────────────────────────────────────────────────────
+alter table contractors drop constraint contractors_plan_check;
+alter table contractors
+  add constraint contractors_plan_check
+  check (plan in ('solo', 'founder', 'pro', 'teams', 'admin'));
 
--- Public: read-only, and only for photos belonging to a sent/approved
--- estimate — a draft's photos are never publicly readable. This check
--- uses the estimate_id folder segment ([2]), not just the contractor_id
--- segment, so it's scoped to the specific estimate rather than "any
--- estimate this contractor owns" — meaningfully narrower than the logos
--- policy above, since a customer's quote link should only ever expose
--- that one job's photos.
-create policy "estimate-photos: public can read for sent/approved estimate"
-  on storage.objects for select
-  using (
-    bucket_id = 'estimate-photos'
-    and exists (
-      select 1 from estimates
-      where estimates.id::text = (storage.foldername(name))[2]
-        and estimates.status in ('sent', 'approved')
-    )
-  );
+-- ─────────────────────────────────────────────────────────
+-- 4. founder_overflow flag. NULL/false for everyone normally; the webhook
+--    sets it true when a Founder payment activates that would push the
+--    active Founder count past the cap, so an admin can resolve it
+--    (refund, move to a paid tier, or honor as Founder if a seat opened).
+-- ─────────────────────────────────────────────────────────
+alter table contractors add column if not exists founder_overflow boolean not null default false;
+
+-- ─────────────────────────────────────────────────────────
+-- 5. Re-create the billing-guard trigger function to ALSO protect
+--    founder_overflow from end-user edits. (Same logic as
+--    migration_billing_admin.sql, with one extra guarded column.) A normal
+--    logged-in session still can't change any billing-controlled column;
+--    only the service-role webhook / SQL editor can.
+-- ─────────────────────────────────────────────────────────
+create or replace function guard_contractor_billing_columns()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_privileged boolean;
+begin
+  v_privileged :=
+    current_user in ('service_role', 'postgres', 'supabase_admin')
+    or session_user in ('service_role', 'postgres', 'supabase_admin')
+    or coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), '') = 'service_role';
+
+  begin
+    if not v_privileged and auth.role() = 'service_role' then
+      v_privileged := true;
+    end if;
+  exception when undefined_function then
+    null;
+  end;
+
+  if v_privileged then
+    return new;
+  end if;
+
+  if (new.plan is distinct from old.plan)
+     or (new.subscription_status is distinct from old.subscription_status)
+     or (new.stripe_customer_id is distinct from old.stripe_customer_id)
+     or (new.stripe_subscription_id is distinct from old.stripe_subscription_id)
+     or (new.current_period_end is distinct from old.current_period_end)
+     or (new.cancel_at_period_end is distinct from old.cancel_at_period_end)
+     or (new.billing_email is distinct from old.billing_email)
+     or (new.founder_overflow is distinct from old.founder_overflow)
+  then
+    raise exception 'Billing columns are managed by Stripe and cannot be changed directly.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_guard_contractor_billing on contractors;
+create trigger trg_guard_contractor_billing
+  before update on contractors
+  for each row execute function guard_contractor_billing_columns();
+
+-- ─────────────────────────────────────────────────────────
+-- 6. Refresh the PostgREST schema cache.
+-- ─────────────────────────────────────────────────────────
+notify pgrst, 'reload schema';
+
+-- ─────────────────────────────────────────────────────────
+-- Finding overflow accounts to resolve manually:
+--   select id, billing_email, subscription_status, stripe_subscription_id
+--   from contractors where founder_overflow = true;
+-- ─────────────────────────────────────────────────────────
